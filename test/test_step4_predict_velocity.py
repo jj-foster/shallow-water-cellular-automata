@@ -2,29 +2,6 @@ from cellular_automata.swfca import SWFCA_Model
 
 import numpy as np
 
-def test_flux_mannings():
-    manning_n = 0.03
-    d0 = 2
-    di = 1
-    bh = 2
-    bh_n = 1
-    l = 1
-
-    flux = SWFCA_Model.flux_manning(manning_n, l, d0, di, bh, bh_n)
-
-    assert round(flux, 2) == 16.96
-
-def test_flux_weir():
-    l = 1
-    bh = 2
-    bh_n = 1
-    z = 0.5
-    z_n = 0.3
-
-    flux = SWFCA_Model.flux_weir(l, bh, bh_n, z, z_n)
-
-    assert round(flux, 3) == 4.996
-
 def compute_flow_dir(d, grid_shape):
     # Setup
     dx, dy = 1.0, 1.0
@@ -50,7 +27,7 @@ def compute_flow_dir(d, grid_shape):
 
     return swfca, flow_dir, bh
 
-def test_step2_update_mass_flux():
+def test_step4_predict_velocity():
     # Setup
     grid_shape = (2, 2)
     
@@ -62,11 +39,7 @@ def test_step2_update_mass_flux():
     swfca, flow_dir, bh = compute_flow_dir(d, grid_shape)
     
     flux = swfca.step2_update_mass_flux(flow_dir, bh)
+    d_new = swfca.step3_predict_water_depth(flux, bh, flow_dir)
+    v_new = swfca.step4_predict_velocity(d_new, flow_dir, bh)
 
-    # Assert
-    assert flux.shape == (2,2,4)
-    assert flux[0,0,0] != 0, print(flux)
-    assert flux[0,0,3] != 0, print(flux)
-    assert flux[1,1,1] != 0, print(flux)
-    assert flux[1,1,2] != 0, print(flux)
-    
+    assert v_new.shape == (2, 2, 4)
