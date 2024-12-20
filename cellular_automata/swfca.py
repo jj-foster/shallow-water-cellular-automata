@@ -7,7 +7,7 @@ CFL = 0.9  # Courant number
 g = 9.81  # Gravitational acceleration
 
 class SWFCA_Model:
-    def __init__(self, grid_shape, d, u, v, z, dx, dy, CFL, manning_n, bh_tolerance=0.1, depth_threshold=0.1):
+    def __init__(self, grid_shape, d, u, v, z, dx, CFL, manning_n, closed_boundaries = np.array([[0]]), bh_tolerance=0.1, depth_threshold=0.1):
         """_summary_
 
         Args:
@@ -21,8 +21,6 @@ class SWFCA_Model:
         """
         self.grid_shape = grid_shape
         self.dx = dx
-        self.dy = dy
-        assert dx == dy, "Only square cells are supported"
         assert grid_shape == d.shape, "Grid shape and water depth shape do not match"
 
         # Initialize fields
@@ -34,6 +32,11 @@ class SWFCA_Model:
         assert v.dtype == np.float64, "v must be float64"
         self.z = z  # Bed elevation
         assert z.dtype == np.float64, "bed elevation must be float64"
+
+        if np.any(closed_boundaries):
+            self.closed_boundaries = closed_boundaries
+        else:
+            self.closed_boundaries = np.zeros(grid_shape, dtype=bool)
 
         self.special_case = np.zeros(grid_shape, dtype=bool)
 
@@ -80,6 +83,10 @@ class SWFCA_Model:
         """Check if the cell is dry."""
         return d >= self.depth_threshold
 
+    def is_closed(self, i, j):
+        """Check if the cell is closed."""
+        return self.closed_boundaries[i, j]
+
     def step1_determine_flow_direction(self, d, bh, flux):
         """_summary_
 
@@ -113,13 +120,16 @@ class SWFCA_Model:
 
                     if self.is_wet(d[i,j]) \
                     and self.is_greater_bh(bh[i, j], bh[ni, nj]) \
-                    and self.is_outward_flow(flux[i, j, theta_idx], theta_idx):
+                    and self.is_outward_flow(flux[i, j, theta_idx], theta_idx) \
+                    and not self.is_closed(ni, nj): # apply closed boundary condition
                         flow_dir[i, j, theta_idx] = 1
                     else:
+                        # special condition
                         if self.is_wet(d[i,j]) \
                         and self.is_wet(d[ni, nj]) \
                         and not self.is_greater_bh(bh[i, j], bh[ni, nj]) \
-                        and self.is_outward_flow_special_case(flux[i, j, theta_idx], theta_idx):
+                        and self.is_outward_flow_special_case(flux[i, j, theta_idx], theta_idx) \
+                        and not self.is_closed(ni, nj): # apply closed boundary condition
                             self.special_case[i, j] = True
                             print("special case at", i, j, "at iteration", self.iteration)
 
@@ -237,7 +247,7 @@ class SWFCA_Model:
                             net_flux += flux[i, j, idx]
                             net_flux += flux[ni, nj, (idx + 2) % 4]
 
-                    new_d[i, j] += self.dt * net_flux / (self.dx * self.dy)
+                    new_d[i, j] += self.dt * net_flux / (self.dx ** 2)
 
                     # Check for negative depth
                     if new_d[i, j] < 0:
@@ -329,6 +339,7 @@ class SWFCA_Model:
                 self.u[i, j] = R(-v_new[i,j,0]) * v_new[i,j,0] + R(v_new[i,j,2]) * v_new[i,j,2]
                 self.v[i, j] = R(-v_new[i,j,1]) * v_new[i,j,1] + R(v_new[i,j,3]) * v_new[i,j,3]
 
+
     def run_simulation(self, num_steps):
         """Run the simulation for a specified number of steps."""
 
@@ -357,16 +368,17 @@ class SWFCA_Model:
 if __name__== "__main__":
 
     # Example usage
-    grid_shape = (10, 10)
-    dx, dy = 1.0, 1.0
-    CFL = 0.5
+    grid_shape = (1, 3)
+    dx = 1.0
+    CFL = 0.3
     manning_n = np.full(grid_shape, 0.03)
     depth_threshold = 0.01
 
     num_steps = 50
 
     d = np.zeros(grid_shape)
-    d[:,0] = 8.0
+    d[0,0] = 8.0
+    # d[0,:] = 4.0
 
     z = np.zeros(grid_shape)
     # z[:, 0] = 3.0
@@ -376,14 +388,17 @@ if __name__== "__main__":
     v = np.zeros(grid_shape)
     # u[:,0] = 10
 
-    model = SWFCA_Model(grid_shape, d, u, v, z, dx, dy, CFL, manning_n)
+    closed_boundaries = np.zeros(grid_shape, dtype=bool)
+    # closed_boundaries[0,2] = True
+
+    model = SWFCA_Model(grid_shape, d, u, v, z, dx, CFL, manning_n, closed_boundaries=closed_boundaries)
     water_depths, us, vs = model.run_simulation(num_steps=num_steps)
 
     avg_d0 = np.mean(water_depths[0])
     avg_d1 = np.mean(water_depths[-1])
     # print(avg_d0, avg_d1)
 
-    # visualize_cell_parameter(water_depths, interval=100)
-    visualize_cell_parameter(us, interval=100)
+    visualize_cell_parameter(water_depths, interval=100)
+    # visualize_cell_parameter(us, interval=100)
     # visualize_cell_parameter(vs, interval=100)
     # visualize_water_depth_3d(water_depths, interval=100)
