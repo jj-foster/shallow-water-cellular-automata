@@ -7,7 +7,7 @@ CFL = 0.9  # Courant number
 g = 9.81  # Gravitational acceleration
 
 class SWFCA_Model:
-    def __init__(self, grid_shape, d, u, v, z, dx, CFL, manning_n, closed_boundaries = np.array([[0]]), bh_tolerance=0.1, depth_threshold=0.1):
+    def __init__(self, grid_shape, d, u, v, z, dx, CFL, manning_n, closed_bc = np.array([[0]]), inlet_bc = np.array([[0]]),bh_tolerance=0.1, depth_threshold=0.1):
         """_summary_
 
         Args:
@@ -33,10 +33,14 @@ class SWFCA_Model:
         self.z = z  # Bed elevation
         assert z.dtype == np.float64, "bed elevation must be float64"
 
-        if np.any(closed_boundaries):
-            self.closed_boundaries = closed_boundaries
+        if np.any(closed_bc):
+            self.closed_boundaries = closed_bc
         else:
             self.closed_boundaries = np.zeros(grid_shape, dtype=bool)
+        if np.any(inlet_bc):
+            self.inlet_boundaries = inlet_bc # inlet mass flux (Q, theta_idx)
+        else:
+            self.inlet_boundaries = np.zeros(grid_shape, dtype=bool)
 
         self.special_case = np.zeros(grid_shape, dtype=bool)
 
@@ -339,6 +343,32 @@ class SWFCA_Model:
                 self.u[i, j] = R(-v_new[i,j,0]) * v_new[i,j,0] + R(v_new[i,j,2]) * v_new[i,j,2]
                 self.v[i, j] = R(-v_new[i,j,1]) * v_new[i,j,1] + R(v_new[i,j,3]) * v_new[i,j,3]
 
+    def inlet_boundary(self):
+        """Applies inlet boundary condition. Assumes subcritical inlet flow
+        """
+        for i in range(self.grid_shape[0]):
+            for j in range(self.grid_shape[0]):
+                if self.inlet_boundaries[i, j, 0] != 0:
+                    Q = self.inlet_boundaries[i, j, 0]
+                    theta_idx = self.inlet_boundaries[i, j, 1]
+
+                    # volume added to water depth
+                    dV = Q * self.dt
+                    
+                    # update water depth
+                    self.d[i, j] += dV / self.dx ** 2
+
+                    # update velocity
+                    speed = Q / (self.dx * self.d[i, j])
+                    if theta_idx == 0:
+                        self.u[i, j] = speed
+                    elif theta_idx == 1:
+                        self.v[i, j] = speed
+                    elif theta_idx == 2:
+                        self.u[i, j] = -speed
+                    elif theta_idx == 3:
+                        self.v[i, j] = -speed
+                    
 
     def run_simulation(self, num_steps):
         """Run the simulation for a specified number of steps."""
@@ -356,6 +386,8 @@ class SWFCA_Model:
             v_new = self.step4_predict_velocity(d_new, flow_dir, bh)
             self.step5_update_fields(d_new, v_new)
 
+            self.inlet_boundary()
+
             self.iteration += 1
             self.update_timestep()
 
@@ -368,30 +400,35 @@ class SWFCA_Model:
 if __name__== "__main__":
 
     # Example usage
-    grid_shape = (1, 3)
+    grid_shape = (1,10)
     dx = 1.0
     CFL = 0.3
     manning_n = np.full(grid_shape, 0.03)
     depth_threshold = 0.01
 
-    num_steps = 50
+    num_steps = 100
 
     d = np.zeros(grid_shape)
-    d[0,0] = 8.0
-    # d[0,:] = 4.0
+    # d[0,0] = 8.0
 
     z = np.zeros(grid_shape)
-    # z[:, 0] = 3.0
-    # z[5,0] = 0
 
-    u = np.zeros(grid_shape)
-    v = np.zeros(grid_shape)
-    # u[:,0] = 10
+    # u = np.zeros(grid_shape)
+    # v = np.zeros(grid_shape)
+
+    u = np.full(grid_shape, 0.01)
+    v = np.full(grid_shape, 0.01)
 
     closed_boundaries = np.zeros(grid_shape, dtype=bool)
     # closed_boundaries[0,2] = True
 
-    model = SWFCA_Model(grid_shape, d, u, v, z, dx, CFL, manning_n, closed_boundaries=closed_boundaries)
+    inlet_bc = np.zeros(grid_shape + (2,))
+    inlet_bc[0,0] = (0.5, 0)
+
+    model = SWFCA_Model(
+        grid_shape, d, u, v, z, dx, CFL, manning_n,
+        closed_bc=closed_boundaries, inlet_bc=inlet_bc
+    )
     water_depths, us, vs = model.run_simulation(num_steps=num_steps)
 
     avg_d0 = np.mean(water_depths[0])

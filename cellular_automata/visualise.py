@@ -10,7 +10,11 @@ def visualize_cell_parameter(time_series_data, interval=100):
     time_series_data (list of 2D arrays): A list where each element is a 2D array representing water depth at a specific time.
     """
     fig, ax = plt.subplots()
-    cax = ax.matshow(time_series_data[0], cmap='Blues')
+    
+    # Determine the maximum value across all time steps
+    max_value = np.max([np.max(data) for data in time_series_data])
+    
+    cax = ax.matshow(time_series_data[0], cmap='Blues', vmin=0, vmax=max_value)
     fig.colorbar(cax)
 
     frame_text = ax.text(0.02, 0.95, '', transform=ax.transAxes, color='white', fontsize=12, bbox=dict(facecolor='black', alpha=0.5))
@@ -25,7 +29,7 @@ def visualize_cell_parameter(time_series_data, interval=100):
     # Set grid to black
     ax.grid(True, color='black')
     ax.grid(which='minor', color='black', linestyle='-', linewidth=2)
-    
+
     plt.show()
 
 def visualize_water_depth_3d(time_series_data, interval=100):
