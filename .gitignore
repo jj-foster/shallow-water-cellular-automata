@@ -1,5 +1,5 @@
 /.pytest_cache
 /.venv
 /test.py
-/cellular_automata/__pycache__
-/test/__pycache__
+cellular_automata/__pycache__
+test/__pycache__
