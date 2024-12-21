@@ -8,16 +8,16 @@ from cellular_automata.visualise import *
 import numpy as np
 
 
-grid_shape = (11,11)
+grid_shape = (101,101)
 dx = 1.0
-CFL = 0.01
-manning_n = np.full(grid_shape, 0.03)
+CFL = 0.5
+manning_n = np.full(grid_shape, 0.1)
 depth_threshold = 0.01
 
-num_steps = 100
+num_steps = 200
 
 d = np.full(grid_shape,1.0)
-d[5,5] = 1.5
+d[50,50] = 1.5
 
 z = np.zeros(grid_shape)
 
@@ -38,7 +38,7 @@ water_depths, us, vs, dt = model.run_simulation(num_steps=num_steps)
 
 avg_water_depths = [np.mean(depth) for depth in water_depths]
 
-visualize_cell_parameter(water_depths, interval=100)
-# plot_iteration_dependent_variable(avg_water_depths)
 plot_iteration_dependent_variable(dt,ylabel="dt (s)")
+visualize_cell_parameter(water_depths, interval=50)
+# plot_iteration_dependent_variable(avg_water_depths)
 # visualize_water_depth_3d(water_depths, interval=100)
