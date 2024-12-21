@@ -471,7 +471,7 @@ if __name__== "__main__":
     grid_shape = (1,5)
     dx = 1.0
     CFL = 0.2
-    manning_n = np.full(grid_shape, 0.03)
+    manning_n = np.full(grid_shape, 0.1)
     depth_threshold = 0.01
 
     num_steps = 100
