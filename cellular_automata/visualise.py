@@ -64,3 +64,14 @@ def visualize_water_depth_3d(time_series_data, interval=100):
     ani = animation.FuncAnimation(fig, update, frames=len(time_series_data), blit=True, interval=interval)
     
     plt.show()
+
+import matplotlib.pyplot as plt
+
+def plot_iteration_dependent_variable(parameter,ylabel=None):
+    
+    plt.figure()
+    plt.plot(parameter)
+    plt.xlabel('Iteration')
+    plt.ylabel(ylabel)
+    plt.grid(True)
+    plt.show()

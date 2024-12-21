@@ -1,4 +1,8 @@
-from visualise import *
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
+
+from cellular_automata.visualise import *
 
 import numpy as np
 
@@ -7,7 +11,11 @@ CFL = 0.9  # Courant number
 g = 9.81  # Gravitational acceleration
 
 class SWFCA_Model:
-    def __init__(self, grid_shape, d, u, v, z, dx, CFL, manning_n, closed_bc = np.array([[0]]), inlet_bc = np.array([[0]]),bh_tolerance=0.1, depth_threshold=0.1):
+    def __init__(
+            self, grid_shape, d, u, v, z, dx, CFL, manning_n,
+            closed_bc = np.array([[0]]), inlet_bc = np.array([[0]]),
+            outlet_bc = np.array([[0]]),
+            bh_tolerance=0.1, depth_threshold=0.1):
         """_summary_
 
         Args:
@@ -41,6 +49,10 @@ class SWFCA_Model:
             self.inlet_boundaries = inlet_bc # inlet mass flux (Q, theta_idx)
         else:
             self.inlet_boundaries = np.zeros(grid_shape, dtype=bool)
+        if np.any(outlet_bc):
+            self.outlet_boundaries = outlet_bc # outlet mass flux (Q, theta_idx)
+        else:
+            self.outlet_boundaries = np.zeros(grid_shape, dtype=bool)
 
         self.special_case = np.zeros(grid_shape, dtype=bool)
 
@@ -288,15 +300,17 @@ class SWFCA_Model:
         """Solve a quadratic equation."""
         discriminant = b**2 - 4*a*c
         if discriminant < 0:
-            return 0  # No real solution
+            return 0, 0  # No real solution
         root1 = (-b + np.sqrt(discriminant)) / (2*a)
         root2 = (-b - np.sqrt(discriminant)) / (2*a)
-        return max(root1, root2, 0)  # Return the positive root or 0 if both are negative
+        return root1, root2
 
     def step4_predict_velocity(self, new_d, flow_dir, bh):
         """Predict water velocity based on the updated depth."""
     
         v_new = np.zeros((*self.grid_shape, 4))
+        # epsilon = 1e-6
+        epsilon = 0
 
         for i in range(self.grid_shape[0]):
             for j in range(self.grid_shape[1]):
@@ -307,28 +321,40 @@ class SWFCA_Model:
                         # Compute the velocity
                         a = 1/(2 * g)
                         if idx == 0: # u(0,1)
-                            b = (self.dx / 2) * ((self.n[ni, nj]**2 * np.abs(self.u[ni, nj])) / (new_d[ni, nj]**(4/3)))
+                            b = (self.dx / 2) * ((self.n[ni, nj]**2 * np.abs(self.u[ni, nj]+epsilon)) / (new_d[ni, nj]**(4/3)))
                             c = self.v[ni, nj]**2 / (2 * g) + new_d[ni, nj] + self.z[ni, nj] + (self.dx / 2) * (self.n[i, j]**2 * self.u[i, j]**2) / self.d[i, j]**(4/3) - bh[i, j]
 
-                            v_new[i, j, 0] = self.solve_quadratic(a, b, c)
+                            root1, root2 = self.solve_quadratic(a, b, c)
+                            if root1 > 0: v_new[i, j, 0] = root1
+                            elif root2 > 0: v_new[i, j, 0] = root2
+                            else : v_new[i, j, 0] = 0
 
                         elif idx == 1: # v(0,2)
-                            b = (self.dx / 2) * ((self.n[ni, nj]**2 * np.abs(self.v[ni, nj])) / (new_d[ni, nj]**(4/3)))
+                            b = (self.dx / 2) * ((self.n[ni, nj]**2 * np.abs(self.v[ni, nj]+epsilon)) / (new_d[ni, nj]**(4/3)))
                             c = self.u[ni, nj]**2 / (2 * g) + new_d[ni, nj] + self.z[ni, nj] + (self.dx / 2) * (self.n[i, j]**2 * self.v[i, j]**2) / self.d[i, j]**(4/3) - bh[i, j]
 
-                            v_new[i, j, 1] = self.solve_quadratic(a, b, c)
+                            root1, root2 = self.solve_quadratic(a, b, c)
+                            if root1 > 0: v_new[i, j, 1] = root1
+                            elif root2 > 0: v_new[i, j, 1] = root2
+                            else : v_new[i, j, 1] = 0
 
                         elif idx == 2: # u(0,3)
-                            b = (self.dx / 2) * ((self.n[ni, nj]**2 * np.abs(self.u[ni, nj])) / (new_d[ni, nj]**(4/3)))
+                            b = (self.dx / 2) * ((self.n[ni, nj]**2 * np.abs(self.u[ni, nj]+epsilon)) / (new_d[ni, nj]**(4/3)))
                             c = self.v[ni, nj]**2 / (2 * g) + new_d[ni, nj] + self.z[ni, nj] + (self.dx / 2) * (self.n[i, j]**2 * self.u[i, j]**2) / self.d[i, j]**(4/3) - bh[i, j]
 
-                            v_new[i, j, 2] = self.solve_quadratic(a, -b, c)
+                            root1, root2 = self.solve_quadratic(a, -b, c)
+                            if root1 < 0: v_new[i, j, 2] = root1
+                            elif root2 < 0: v_new[i, j, 2] = root2
+                            else : v_new[i, j, 2] = 0
 
                         elif idx == 3: # v(0,4)
-                            b = (self.dx / 2) * ((self.n[ni, nj]**2 * np.abs(self.v[ni, nj])) / (new_d[ni, nj]**(4/3)))
+                            b = (self.dx / 2) * ((self.n[ni, nj]**2 * np.abs(self.v[ni, nj]+epsilon)) / (new_d[ni, nj]**(4/3)))
                             c = self.u[ni, nj]**2 / (2 * g) + new_d[ni, nj] + self.z[ni, nj] + (self.dx / 2) * (self.n[i, j]**2 * self.v[i, j]**2) / self.d[i, j]**(4/3) - bh[i, j]
 
-                            v_new[i, j, 3] = self.solve_quadratic(a, -b, c)
+                            root1, root2 = self.solve_quadratic(a, -b, c)
+                            if root1 < 0: v_new[i, j, 3] = root1
+                            elif root2 < 0: v_new[i, j, 3] = root2
+                            else : v_new[i, j, 3] = 0
 
         return v_new
 
@@ -339,9 +365,14 @@ class SWFCA_Model:
         # update velocities
         R = lambda u : 1 if u > 0 else 0
         for i in range(self.grid_shape[0]):
-            for j in range(self.grid_shape[0]):
-                self.u[i, j] = R(-v_new[i,j,0]) * v_new[i,j,0] + R(v_new[i,j,2]) * v_new[i,j,2]
-                self.v[i, j] = R(-v_new[i,j,1]) * v_new[i,j,1] + R(v_new[i,j,3]) * v_new[i,j,3]
+            for j in range(self.grid_shape[1]):
+                u01 = v_new[i, j+1, 2] if j < self.grid_shape[1]-1 else 0
+                v02 = v_new[i-1, j, 3] if i > 0 else 0
+                u03 = v_new[i, j-1, 0] if j > 0 else 0                   
+                v04 = v_new[i+1, j, 1] if i < self.grid_shape[0]-1 else 0                   
+
+                self.u[i, j] = R(-u01) * u01 + R(u03) * u03
+                self.v[i, j] = R(-v02) * v02 + R(v04) * v04
 
     def inlet_boundary(self):
         """Applies inlet boundary condition. Assumes subcritical inlet flow
@@ -354,8 +385,6 @@ class SWFCA_Model:
 
                     # volume added to water depth
                     dV = Q * self.dt
-                    
-                    # update water depth
                     self.d[i, j] += dV / self.dx ** 2
 
                     # update velocity
@@ -368,7 +397,41 @@ class SWFCA_Model:
                         self.u[i, j] = -speed
                     elif theta_idx == 3:
                         self.v[i, j] = -speed
-                    
+           
+    def outlet_boundary(self):
+        """Applies outlet boundary condition. Assumes subcritical outlet flow
+        """
+        for i in range(self.grid_shape[0]):
+            for j in range(self.grid_shape[0]):
+                if self.outlet_boundaries[i, j, 0] != 0:
+                    # Get outlet parameters
+                    downstream_depth = self.outlet_boundaries[i, j, 0]  # Specified downstream depth
+                    theta_idx = self.outlet_boundaries[i, j, 1]  # Flow direction
+
+                    # Calculate outflow based on direction
+                    if theta_idx == 0:  # East
+                        Q = self.dx * self.u[i, j] * self.d[i, j]
+                    elif theta_idx == 1:  # North
+                        Q = self.dx * self.v[i, j] * self.d[i, j]
+                    elif theta_idx == 2:  # West
+                        Q = -self.dx * self.u[i, j] * self.d[i, j]
+                    elif theta_idx == 3:  # South
+                        Q = -self.dx * self.v[i, j] * self.d[i, j]
+
+                    # Update water depth
+                    dV = Q * self.dt
+                    self.d[i, j] -= dV / self.dx**2
+
+                    # Update velocity using specified downstream depth for subcritical flow
+                    speed = Q / (self.dx * downstream_depth)
+                    if theta_idx == 0:
+                        self.u[i, j] = speed
+                    elif theta_idx == 1:
+                        self.v[i, j] = speed
+                    elif theta_idx == 2:
+                        self.u[i, j] = -speed
+                    elif theta_idx == 3:
+                        self.v[i, j] = -speed       
 
     def run_simulation(self, num_steps):
         """Run the simulation for a specified number of steps."""
@@ -376,6 +439,7 @@ class SWFCA_Model:
         water_depths = [self.d.copy()]
         us = [self.u.copy()]
         vs = [self.v.copy()]
+        dts = [self.dt]
 
         for step in range(num_steps):
             flux = np.zeros((*self.grid_shape, 4))
@@ -385,8 +449,11 @@ class SWFCA_Model:
             d_new = self.step3_predict_water_depth(flux, bh, flow_dir)
             v_new = self.step4_predict_velocity(d_new, flow_dir, bh)
             self.step5_update_fields(d_new, v_new)
-
-            self.inlet_boundary()
+            
+            if np.any(self.inlet_boundaries):
+                self.inlet_boundary()
+            if np.any(self.outlet_boundaries):
+                self.outlet_boundary()
 
             self.iteration += 1
             self.update_timestep()
@@ -394,48 +461,50 @@ class SWFCA_Model:
             water_depths.append(self.d.copy())
             us.append(self.u.copy())
             vs.append(self.v.copy())
+            dts.append(self.dt)
 
-        return water_depths, us, vs
+        return water_depths, us, vs, dts
 
 if __name__== "__main__":
 
     # Example usage
-    grid_shape = (1,10)
+    grid_shape = (1,5)
     dx = 1.0
-    CFL = 0.3
+    CFL = 0.2
     manning_n = np.full(grid_shape, 0.03)
     depth_threshold = 0.01
 
     num_steps = 100
 
     d = np.zeros(grid_shape)
-    # d[0,0] = 8.0
+    d[:,:] = 1.0
 
     z = np.zeros(grid_shape)
+    z = np.array([[0.5, 0.4, 0.3, 0.2, 0.1]])
 
-    # u = np.zeros(grid_shape)
-    # v = np.zeros(grid_shape)
-
-    u = np.full(grid_shape, 0.01)
-    v = np.full(grid_shape, 0.01)
+    u = np.zeros(grid_shape)
+    v = np.zeros(grid_shape)
 
     closed_boundaries = np.zeros(grid_shape, dtype=bool)
     # closed_boundaries[0,2] = True
 
     inlet_bc = np.zeros(grid_shape + (2,))
-    inlet_bc[0,0] = (0.5, 0)
+    # inlet_bc[0,0] = (0.2, 0)
+
+    outlet_bc = np.zeros(grid_shape + (2,))
+    outlet_bc[0,0] = (0.1, 0)
 
     model = SWFCA_Model(
         grid_shape, d, u, v, z, dx, CFL, manning_n,
-        closed_bc=closed_boundaries, inlet_bc=inlet_bc
+        closed_bc=closed_boundaries, inlet_bc=inlet_bc, outlet_bc=outlet_bc
     )
-    water_depths, us, vs = model.run_simulation(num_steps=num_steps)
+    water_depths, us, vs, dt = model.run_simulation(num_steps=num_steps)
+    avg_water_depths = [np.mean(depth) for depth in water_depths]
 
-    avg_d0 = np.mean(water_depths[0])
-    avg_d1 = np.mean(water_depths[-1])
-    # print(avg_d0, avg_d1)
+    plot_iteration_dependent_variable(dt,ylabel="dt (s)")
+    plot_iteration_dependent_variable(avg_water_depths,ylabel="water depth")
 
     visualize_cell_parameter(water_depths, interval=100)
-    # visualize_cell_parameter(us, interval=100)
+    # visualize_cell_parameter(us, interval=500)
     # visualize_cell_parameter(vs, interval=100)
     # visualize_water_depth_3d(water_depths, interval=100)
