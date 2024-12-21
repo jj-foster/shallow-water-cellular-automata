@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import numpy as np
 
-def visualize_cell_parameter(time_series_data, interval=100):
+def visualize_cell_parameter(time_series_data, interval=100,save=False,filename=None):
     """
     Visualize the water depth with time in an animation.
     
@@ -11,6 +11,10 @@ def visualize_cell_parameter(time_series_data, interval=100):
     """
     fig, ax = plt.subplots()
     
+    # Set grid to black
+    ax.grid(True, color='black')
+    ax.grid(which='minor', color='black', linestyle='-', linewidth=2)
+
     # Determine the maximum value across all time steps
     max_value = np.max([np.max(data) for data in time_series_data])
     
@@ -26,9 +30,9 @@ def visualize_cell_parameter(time_series_data, interval=100):
 
     ani = animation.FuncAnimation(fig, update, frames=len(time_series_data), blit=True, interval=interval)
     
-    # Set grid to black
-    ax.grid(True, color='black')
-    ax.grid(which='minor', color='black', linestyle='-', linewidth=2)
+    if save:
+        Writer = animation.FFMpegWriter(fps=10)
+        ani.save(filename, writer=Writer)
 
     plt.show()
 

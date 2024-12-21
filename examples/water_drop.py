@@ -17,7 +17,7 @@ depth_threshold = 0.01
 num_steps = 200
 
 d = np.full(grid_shape,1.0)
-d[50,50] = 1.5
+d[49:51,49:51] = 1.5
 
 z = np.zeros(grid_shape)
 
@@ -39,6 +39,6 @@ water_depths, us, vs, dt = model.run_simulation(num_steps=num_steps)
 avg_water_depths = [np.mean(depth) for depth in water_depths]
 
 plot_iteration_dependent_variable(dt,ylabel="dt (s)")
-visualize_cell_parameter(water_depths, interval=50)
+visualize_cell_parameter(water_depths, interval=50,save=False,filename="water_drop.mp4")
 # plot_iteration_dependent_variable(avg_water_depths)
 # visualize_water_depth_3d(water_depths, interval=100)
