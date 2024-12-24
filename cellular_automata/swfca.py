@@ -50,7 +50,7 @@ class SWFCA_Model:
         else:
             self.inlet_boundaries = np.zeros(grid_shape, dtype=bool)
         if np.any(outlet_bc):
-            self.outlet_boundaries = outlet_bc # outlet mass flux (Q, theta_idx)
+            self.outlet_boundaries = outlet_bc # outlet mass flux Q
         else:
             self.outlet_boundaries = np.zeros(grid_shape, dtype=bool)
 
@@ -220,6 +220,9 @@ class SWFCA_Model:
                             self.dx, bh[i, j], bh[ni, nj], self.z[i, j], self.z[ni, nj]
                         )
 
+                        # if flux_manning < flux_weir:
+                        #     print("manning smaller")
+
                     flux[i, j, theta_idx] = self.theta[theta_idx] * min(flux_manning, flux_weir)
                     if self.special_case[i, j]:
                         flux[i, j, theta_idx] = self.special_case_flux(flux[i, j, theta_idx], bh[i, j], bh[ni, nj], self.d[ni, nj])
@@ -378,7 +381,7 @@ class SWFCA_Model:
         """Applies inlet boundary condition. Assumes subcritical inlet flow
         """
         for i in range(self.grid_shape[0]):
-            for j in range(self.grid_shape[0]):
+            for j in range(self.grid_shape[1]):
                 if self.inlet_boundaries[i, j, 0] != 0:
                     Q = self.inlet_boundaries[i, j, 0]
                     theta_idx = self.inlet_boundaries[i, j, 1]
@@ -402,36 +405,16 @@ class SWFCA_Model:
         """Applies outlet boundary condition. Assumes subcritical outlet flow
         """
         for i in range(self.grid_shape[0]):
-            for j in range(self.grid_shape[0]):
-                if self.outlet_boundaries[i, j, 0] != 0:
+            for j in range(self.grid_shape[1]):
+                if self.outlet_boundaries[i, j] != 0:
                     # Get outlet parameters
-                    downstream_depth = self.outlet_boundaries[i, j, 0]  # Specified downstream depth
-                    theta_idx = self.outlet_boundaries[i, j, 1]  # Flow direction
-
-                    # Calculate outflow based on direction
-                    if theta_idx == 0:  # East
-                        Q = self.dx * self.u[i, j] * self.d[i, j]
-                    elif theta_idx == 1:  # North
-                        Q = self.dx * self.v[i, j] * self.d[i, j]
-                    elif theta_idx == 2:  # West
-                        Q = -self.dx * self.u[i, j] * self.d[i, j]
-                    elif theta_idx == 3:  # South
-                        Q = -self.dx * self.v[i, j] * self.d[i, j]
+                    Q = self.outlet_boundaries[i, j]  # Specified downstream depth
 
                     # Update water depth
                     dV = Q * self.dt
                     self.d[i, j] -= dV / self.dx**2
-
-                    # Update velocity using specified downstream depth for subcritical flow
-                    speed = Q / (self.dx * downstream_depth)
-                    if theta_idx == 0:
-                        self.u[i, j] = speed
-                    elif theta_idx == 1:
-                        self.v[i, j] = speed
-                    elif theta_idx == 2:
-                        self.u[i, j] = -speed
-                    elif theta_idx == 3:
-                        self.v[i, j] = -speed       
+                    if self.d[i, j] < 0:
+                        self.d[i, j] = 0
 
     def run_simulation(self, num_steps):
         """Run the simulation for a specified number of steps."""
@@ -440,6 +423,7 @@ class SWFCA_Model:
         us = [self.u.copy()]
         vs = [self.v.copy()]
         dts = [self.dt]
+        bhs = []
 
         for step in range(num_steps):
             flux = np.zeros((*self.grid_shape, 4))
@@ -462,25 +446,29 @@ class SWFCA_Model:
             us.append(self.u.copy())
             vs.append(self.v.copy())
             dts.append(self.dt)
+            bhs.append(bh)
 
-        return water_depths, us, vs, dts
+        return water_depths, us, vs, dts, bhs
 
 if __name__== "__main__":
 
     # Example usage
-    grid_shape = (1,5)
+    grid_shape = (1,1)
     dx = 1.0
-    CFL = 0.2
-    manning_n = np.full(grid_shape, 0.1)
+    CFL = 0.15
+    manning_n = np.full(grid_shape, 0.2)
     depth_threshold = 0.01
+    hydrodynamic_head_threshold = 0.01
 
     num_steps = 100
 
     d = np.zeros(grid_shape)
     d[:,:] = 1.0
+    # d[0,0] = 1.5
 
     z = np.zeros(grid_shape)
-    z = np.array([[0.5, 0.4, 0.3, 0.2, 0.1]])
+    # z = np.array([[0.5, 0.4, 0.3, 0.2, 0.1]])
+    # z = np.array([[0.5, 0]])
 
     u = np.zeros(grid_shape)
     v = np.zeros(grid_shape)
@@ -489,22 +477,24 @@ if __name__== "__main__":
     # closed_boundaries[0,2] = True
 
     inlet_bc = np.zeros(grid_shape + (2,))
-    # inlet_bc[0,0] = (0.2, 0)
+    inlet_bc[0,0] = (1.1, 0)
 
-    outlet_bc = np.zeros(grid_shape + (2,))
-    outlet_bc[0,0] = (0.1, 0)
+    outlet_bc = np.zeros(grid_shape)
+    outlet_bc[0,0] = 1
 
     model = SWFCA_Model(
         grid_shape, d, u, v, z, dx, CFL, manning_n,
-        closed_bc=closed_boundaries, inlet_bc=inlet_bc, outlet_bc=outlet_bc
+        closed_bc=closed_boundaries, inlet_bc=inlet_bc, outlet_bc=outlet_bc,
+        bh_tolerance=hydrodynamic_head_threshold
     )
-    water_depths, us, vs, dt = model.run_simulation(num_steps=num_steps)
+    water_depths, us, vs, dt, bh = model.run_simulation(num_steps=num_steps)
     avg_water_depths = [np.mean(depth) for depth in water_depths]
+    std_bh = [np.std(h) for h in bh]
+    print(std_bh[-1])
 
-    plot_iteration_dependent_variable(dt,ylabel="dt (s)")
-    plot_iteration_dependent_variable(avg_water_depths,ylabel="water depth")
+    plot_iteration_dependent_variable([dt, std_bh], ["dt (s)", "Hydrodynamic head std"])
 
-    visualize_cell_parameter(water_depths, interval=100)
     # visualize_cell_parameter(us, interval=500)
+    visualize_cell_parameter(bh, interval=100)
     # visualize_cell_parameter(vs, interval=100)
     # visualize_water_depth_3d(water_depths, interval=100)
