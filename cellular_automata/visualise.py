@@ -5,7 +5,7 @@ import matplotlib.animation as animation
 
 import numpy as np
 
-def visualize_cell_parameter(time_series_data, interval=100,save=False,filename=None):
+def visualize_cell_parameter(time_series_data, zmax=None, interval=100,save=False,filename=None):
     """
     Visualize the water depth with time in an animation.
     
@@ -19,8 +19,11 @@ def visualize_cell_parameter(time_series_data, interval=100,save=False,filename=
     ax.grid(which='minor', color='black', linestyle='-', linewidth=2)
 
     # Determine the maximum value across all time steps
-    max_value = np.max([np.max(data) for data in time_series_data])
     min_value = np.min([np.min(data) for data in time_series_data])
+    if zmax == None:
+        max_value = np.max([np.max(data) for data in time_series_data])
+    else:
+        max_value = zmax
     
     cax = ax.matshow(time_series_data[0], cmap='coolwarm', vmin=min_value, vmax=max_value)
     fig.colorbar(cax)
