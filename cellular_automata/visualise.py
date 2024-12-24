@@ -1,5 +1,8 @@
+import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+# matplotlib.use('TkAgg')
+
 import numpy as np
 
 def visualize_cell_parameter(time_series_data, interval=100,save=False,filename=None):
@@ -17,8 +20,9 @@ def visualize_cell_parameter(time_series_data, interval=100,save=False,filename=
 
     # Determine the maximum value across all time steps
     max_value = np.max([np.max(data) for data in time_series_data])
+    min_value = np.min([np.min(data) for data in time_series_data])
     
-    cax = ax.matshow(time_series_data[0], cmap='Blues', vmin=0, vmax=max_value)
+    cax = ax.matshow(time_series_data[0], cmap='coolwarm', vmin=min_value, vmax=max_value)
     fig.colorbar(cax)
 
     frame_text = ax.text(0.02, 0.95, '', transform=ax.transAxes, color='white', fontsize=12, bbox=dict(facecolor='black', alpha=0.5))
@@ -71,11 +75,33 @@ def visualize_water_depth_3d(time_series_data, interval=100):
 
 import matplotlib.pyplot as plt
 
-def plot_iteration_dependent_variable(parameter,ylabel=None):
+def plot_iteration_dependent_variable(datasets, ylabels):
+    """
+    Plots multiple datasets on the same graph with separate y-axes.
     
-    plt.figure()
-    plt.plot(parameter)
-    plt.xlabel('Iteration')
-    plt.ylabel(ylabel)
-    plt.grid(True)
+    Args:
+        datasets (list of lists): List of datasets to plot.
+        ylabels (list of str): List of labels for each dataset.
+    """
+    fig, ax1 = plt.subplots()
+
+    ax1.plot(datasets[0], 'b-')
+    ax1.set_xlabel('Iteration')
+    ax1.set_ylabel(ylabels[0], color='b')
+    ax1.tick_params(axis='y', labelcolor='b')
+
+    if len(datasets) > 1:
+        ax2 = ax1.twinx()
+        ax2.plot(datasets[1], 'r-')
+        ax2.set_ylabel(ylabels[1], color='r')
+        ax2.tick_params(axis='y', labelcolor='r')
+
+    if len(datasets) > 2:
+        ax3 = ax1.twinx()
+        ax3.spines['right'].set_position(('outward', 60))
+        ax3.plot(datasets[2], 'g-')
+        ax3.set_ylabel(ylabels[2], color='g')
+        ax3.tick_params(axis='y', labelcolor='g')
+
+    fig.tight_layout()
     plt.show()
