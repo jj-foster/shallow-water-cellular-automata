@@ -56,6 +56,8 @@ def visualize_water_depth_3d(time_series_data, interval=100):
     y = y.flatten()
     z = np.zeros_like(x)
 
+    z_max = np.max([np.max(data) for data in time_series_data])
+
     # Bar dimensions
     dx = dy = 0.9
 
@@ -65,6 +67,7 @@ def visualize_water_depth_3d(time_series_data, interval=100):
         ax.bar3d(x, y, z, dx, dy, dz, color='b', edgecolor='k')
         ax.set_xlabel('X')
         ax.set_ylabel('Y')
+        ax.set_zlim(0, z_max)
         ax.set_zlabel('Water Depth')
         ax.set_title(f'Frame: {frame}')
         return ax,
