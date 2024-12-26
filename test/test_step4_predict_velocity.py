@@ -39,7 +39,7 @@ def test_step4_predict_velocity():
     swfca, flow_dir, bh = compute_flow_dir(d, grid_shape)
     
     flux = swfca.step2_update_mass_flux(flow_dir, bh)
-    d_new = swfca.step3_predict_water_depth(flux, bh, flow_dir)
+    d_new = swfca.water_depth_euler(flux, bh, flow_dir)
     v_new = swfca.step4_predict_velocity(d_new, flow_dir, bh)
 
     assert v_new.shape == (2, 2, 4)

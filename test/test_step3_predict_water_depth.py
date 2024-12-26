@@ -39,7 +39,7 @@ def test_step3_predict_water_depth():
     swfca, flow_dir, bh = compute_flow_dir(d, grid_shape)
     
     flux = swfca.step2_update_mass_flux(flow_dir, bh)
-    new_d = swfca.step3_predict_water_depth(flux, bh, flow_dir)
+    new_d = swfca.water_depth_euler(flux, bh, flow_dir)
 
     # Assert
     assert new_d.shape == grid_shape
