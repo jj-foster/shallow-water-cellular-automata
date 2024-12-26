@@ -5,7 +5,8 @@ import matplotlib.animation as animation
 
 import numpy as np
 
-def visualize_cell_parameter(time_series_data, zmax=None, interval=100,save=False,filename=None):
+def visualize_cell_parameter(
+        time_series_data, zmax=None, zmin=None, interval=100,save=False,filename=None):
     """
     Visualize the water depth with time in an animation.
     
@@ -13,19 +14,17 @@ def visualize_cell_parameter(time_series_data, zmax=None, interval=100,save=Fals
     time_series_data (list of 2D arrays): A list where each element is a 2D array representing water depth at a specific time.
     """
     fig, ax = plt.subplots()
-    
-    # Set grid to black
-    ax.grid(True, color='black')
-    ax.grid(which='minor', color='black', linestyle='-', linewidth=2)
+    # ax.set_xticks(np.arange(0, time_series_data[0].shape[1], 1), minor=True)
+    # ax.set_yticks(np.arange(0, time_series_data[0].shape[0], 1), minor=True)
 
     # Determine the maximum value across all time steps
-    min_value = np.min([np.min(data) for data in time_series_data])
+
+    if zmin == None:
+        zmin = np.min([np.min(data) for data in time_series_data])
     if zmax == None:
-        max_value = np.max([np.max(data) for data in time_series_data])
-    else:
-        max_value = zmax
+        zmax = np.max([np.max(data) for data in time_series_data])
     
-    cax = ax.matshow(time_series_data[0], cmap='coolwarm', vmin=min_value, vmax=max_value)
+    cax = ax.matshow(time_series_data[0], cmap='coolwarm', vmin=zmin, vmax=zmax)
     fig.colorbar(cax)
 
     frame_text = ax.text(0.02, 0.95, '', transform=ax.transAxes, color='white', fontsize=12, bbox=dict(facecolor='black', alpha=0.5))
@@ -33,6 +32,7 @@ def visualize_cell_parameter(time_series_data, zmax=None, interval=100,save=Fals
     def update(frame):
         cax.set_array(time_series_data[frame])
         frame_text.set_text(f'Frame: {frame}')
+
         return cax, frame_text
 
     ani = animation.FuncAnimation(fig, update, frames=len(time_series_data), blit=True, interval=interval)
@@ -43,7 +43,7 @@ def visualize_cell_parameter(time_series_data, zmax=None, interval=100,save=Fals
 
     plt.show()
 
-def visualize_water_depth_3d(time_series_data, interval=100):
+def visualize_water_depth_3d(time_series_data, interval=100, z_max=None):
     """
     Visualize the water depth with time in a 3D animation.
     
@@ -59,7 +59,8 @@ def visualize_water_depth_3d(time_series_data, interval=100):
     y = y.flatten()
     z = np.zeros_like(x)
 
-    z_max = np.max([np.max(data) for data in time_series_data])
+    if z_max == None:
+        z_max = np.max([np.max(data) for data in time_series_data])
 
     # Bar dimensions
     dx = dy = 0.9
