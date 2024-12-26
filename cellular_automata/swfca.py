@@ -6,10 +6,6 @@ from cellular_automata.visualise import *
 
 import numpy as np
 
-# Constants and parameters
-CFL = 0.9  # Courant number
-g = 9.81  # Gravitational acceleration
-
 class SWFCA_Model:
     def __init__(
             self, grid_shape, d, u, v, z, dx, CFL, manning_n,
@@ -64,10 +60,12 @@ class SWFCA_Model:
         self.bh_tolerance = bh_tolerance
         self.depth_threshold = depth_threshold
 
+        self.g = 9.81
+
         self.CFL = CFL  # Courant number
         self.dt = 0
         self.update_timestep()
-
+        
         self.theta = (1, 1, -1, -1)
         self.direction_idx = [(0, 1), (-1, 0), (0, -1), (1, 0)]
 
@@ -78,7 +76,7 @@ class SWFCA_Model:
         for i in range(self.grid_shape[0]):
             for j in range(self.grid_shape[1]):
                 if self.d[i, j] > self.depth_threshold:  # Only consider wet cells
-                    local_dt = self.dx / (np.sqrt(self.u[i, j]**2 + self.v[i, j]**2) + np.sqrt(g * self.d[i, j]))
+                    local_dt = self.dx / (np.sqrt(self.u[i, j]**2 + self.v[i, j]**2) + np.sqrt(self.g * self.d[i, j]))
                     min_dt = min(min_dt, local_dt)
 
         self.dt = min_dt * self.CFL
@@ -87,7 +85,7 @@ class SWFCA_Model:
     @staticmethod
     def compute_bernoulli_head(z, d, u, v):
         """Compute Bernoulli hydraulic head."""
-        return z + d + 0.5 * (u**2 + v**2) / g
+        return z + d + 0.5 * (u**2 + v**2) / 9.81
     
     def is_greater_bh(self, H0, Hi):
         """Compare Bernoulli heads at neighbour cell."""
@@ -120,7 +118,7 @@ class SWFCA_Model:
             NDArray[np.float64]: Flow direction. 3d array of size (grid_shape[0], grid_shape[1], 4)
         """
         flow_dir = np.zeros_like(flux)
-        self.special_case = np.zeros_like(d, dtype=bool)
+        self.special_case = np.zeros_like(flow_dir, dtype=bool)
 
         # Iterate through cells and neighbors to calculate flow directions
         for i in range(self.grid_shape[0]):
@@ -150,7 +148,8 @@ class SWFCA_Model:
                         and not self.is_greater_bh(bh[i, j], bh[ni, nj]) \
                         and self.is_outward_flow_special_case(flux[i, j, theta_idx], theta_idx) \
                         and not self.is_closed(ni, nj): # apply closed boundary condition
-                            self.special_case[i, j] = True
+                            flow_dir[i, j, theta_idx] = 1
+                            self.special_case[i, j, theta_idx] = True
                             print("special case at", i, j, "at iteration", self.iteration)
 
         return flow_dir
@@ -191,7 +190,7 @@ class SWFCA_Model:
         hi = max(0, Hi - max_z)
         psi = (1 - (hi/h0)**1.5)**0.385
 
-        return 2/3 * l * np.sqrt(2 * g) * psi * h0**1.5
+        return 2/3 * l * np.sqrt(2 * 9.81) * psi * h0**1.5
 
     def special_case_flux(self, Q0i, H0, Hi, di):
         dQ0i = min(
@@ -202,50 +201,52 @@ class SWFCA_Model:
         new_Q0i = (Q0i / np.abs(Q0i)) * (np.abs(Q0i) - dQ0i)
         return new_Q0i
 
-    def step2_update_mass_flux(self, flow_dir, bh):
+    def step2_update_mass_flux(self, flow_dir, bh, flux_prev):
         """Update the mass flux using Manning's and weir equations."""
-        flux = np.zeros_like(flow_dir)
+        flux_new = np.zeros_like(flow_dir)
 
         for i in range(self.grid_shape[0]):
             for j in range(self.grid_shape[1]):
                 for theta_idx in range(len(self.theta)):
-                    flux_manning, flux_weir = 0, 0
+
+                    di, dj = self.direction_idx[theta_idx]
+                    ni, nj = i + di, j + dj
 
                     # flux depends on flow direction so no need to check for edge of grid as this was done in flow_dir
                     if flow_dir[i, j, theta_idx] == 1:
-                        di, dj = self.direction_idx[theta_idx]
-                        ni, nj = i + di, j + dj
+                        if not self.special_case[i, j, theta_idx]:
+                            # normal flow case (H0>Hi, flux from centre to neighbor cell)
+                            flux_manning = self.flux_manning(
+                                self.n[i, j], self.dx, self.d[i, j], 
+                                self.d[ni, nj], bh[i, j], bh[ni, nj]
+                            )
+                            flux_weir = self.flux_weir(
+                                self.dx, bh[i, j], bh[ni, nj], self.z[i, j], self.z[ni, nj]
+                            )
 
-                        flux_manning = self.flux_manning(
-                            self.n[i, j], self.dx, self.d[i, j], 
-                            self.d[ni, nj], bh[i, j], bh[ni, nj]
-                        )
-                        flux_weir = self.flux_weir(
-                            self.dx, bh[i, j], bh[ni, nj], self.z[i, j], self.z[ni, nj]
-                        )
+                            flux_new[i, j, theta_idx] = self.theta[theta_idx] * min(flux_manning, flux_weir)
 
-                        # if flux_manning < flux_weir:
-                        #     print("manning smaller")
+                        else:   # special flow case (H0<Hi, flux from centre to neighbour cell)
 
-                    flux[i, j, theta_idx] = self.theta[theta_idx] * min(flux_manning, flux_weir)
-                    if self.special_case[i, j]:
-                        flux[i, j, theta_idx] = self.special_case_flux(flux[i, j, theta_idx], bh[i, j], bh[ni, nj], self.d[ni, nj])
+                            flux_new[i, j, theta_idx] = self.special_case_flux(
+                                flux_prev[i, j, theta_idx], bh[i, j], bh[ni, nj], self.d[ni, nj]
+                            )
 
-        return flux
+        return flux_new
     
-    def flow_direction_unchanged(self, bh, zi, di, ui, vi):
+    def flow_direction_unchanged(self, bh, zi, new_di, ui, vi):
         """Check if the flow direction remains unchanged."""
-        return bh - self.bh_tolerance >= zi + di + 0.5 * (ui**2 + vi**2) / g
+        return bh - self.bh_tolerance > zi + new_di + (ui**2 + vi**2) / (2*self.g)
 
-    def step3_predict_water_depth(self, flux, bh, flow_dir):
+    def water_depth_euler(self, flux, bh, flow_dir):
         """Predict water depth based on mass conservation."""
         max_iterations = 10
         iteration = 0
 
         while iteration < max_iterations:
-            new_d = np.copy(self.d)
+            # new_d = np.copy(self.d)
+            new_d = np.zeros_like(self.d)
             dd = np.zeros_like(self.d)
-            iteration += 1
             negative_depth = False
             flow_dir_changed = False
 
@@ -272,35 +273,48 @@ class SWFCA_Model:
                             net_flux += flux[ni, nj, (idx + 2) % 4]
 
                     dd[i, j] = self.dt * net_flux / (self.dx ** 2)
-                    new_d[i, j] += dd[i, j]
+                    new_d[i, j] = self.d[i,j] + dd[i, j]
 
                     # Check for negative depth
                     if new_d[i, j] < 0:
                         negative_depth = True
+                        print(new_d[i, j])
                         break
-
-                    # Check if flow direction remains unchanged
-                    for idx, (di, dj) in enumerate(self.direction_idx):
-                        ni, nj = i + di, j + dj
-                        if flow_dir[i, j, idx] == 1:
-                            if not self.flow_direction_unchanged(
-                                bh[i, j], self.z[ni, nj], self.d[ni, nj], self.u[ni, nj], self.v[ni, nj]
-                            ):
-                                print(bh[i, j] - self.bh_tolerance)
-                                print(self.z[ni, nj] + self.d[ni, nj] + 0.5 * (self.u[ni, nj]**2 + self.v[ni, nj]**2) / g)
-                                flow_dir_changed = True
-                                break
-                    
-                if negative_depth or flow_dir_changed:
+                    elif new_d[i, j] < 0 and iteration == max_iterations - 1:
+                        new_d[i, j] = 0
+                        break
+        
+                if negative_depth:
                     break
-            
+
+            if negative_depth == False:
+                # Check if flow direction remains unchanged
+                for i in range(self.grid_shape[0]):
+                    for j in range(self.grid_shape[1]):
+                        for idx, (di, dj) in enumerate(self.direction_idx):
+                            ni, nj = i + di, j + dj
+                            if flow_dir[i, j, idx] == 1:
+                                change_dir = self.flow_direction_unchanged(
+                                    bh[i, j], self.z[ni, nj], new_d[ni, nj], self.u[ni, nj], self.v[ni, nj]
+                                )
+                                if (not change_dir and not self.special_case[i,j,idx]) \
+                                or (change_dir and self.special_case[i,j,idx]):
+                                    flow_dir_changed = True
+                                    print("AH",self.iteration,i,j)
+                                    break
+                        
+                        if flow_dir_changed:
+                            break
+                    if flow_dir_changed:
+                        break
+                           
             if not negative_depth and not flow_dir_changed:
                 break
 
             # Reduce the time step and recompute
             self.dt *= 0.5
-
             print(f"Reducing time step to {self.dt}; Iteration {iteration}")
+            iteration += 1
         
         return new_d, dd
 
@@ -328,10 +342,10 @@ class SWFCA_Model:
 
                     if flow_dir[i, j, idx] == 1:
                         # Compute the velocity
-                        a = 1/(2 * g)
+                        a = 1/(2 * self.g)
                         if idx == 0: # u(0,1)
                             b = (self.dx / 2) * ((self.n[ni, nj]**2 * np.abs(self.u[ni, nj]+epsilon)) / (new_d[ni, nj]**(4/3)))
-                            c = self.v[ni, nj]**2 / (2 * g) + new_d[ni, nj] + self.z[ni, nj] + (self.dx / 2) * (self.n[i, j]**2 * self.u[i, j]**2) / self.d[i, j]**(4/3) - bh[i, j]
+                            c = self.v[ni, nj]**2 / (2 * self.g) + new_d[ni, nj] + self.z[ni, nj] + (self.dx / 2) * (self.n[i, j]**2 * self.u[i, j]**2) / self.d[i, j]**(4/3) - bh[i, j]
 
                             root1, root2 = self.solve_quadratic(a, b, c)
                             if root1 > 0: v_new[i, j, 0] = root1
@@ -340,7 +354,7 @@ class SWFCA_Model:
 
                         elif idx == 1: # v(0,2)
                             b = (self.dx / 2) * ((self.n[ni, nj]**2 * np.abs(self.v[ni, nj]+epsilon)) / (new_d[ni, nj]**(4/3)))
-                            c = self.u[ni, nj]**2 / (2 * g) + new_d[ni, nj] + self.z[ni, nj] + (self.dx / 2) * (self.n[i, j]**2 * self.v[i, j]**2) / self.d[i, j]**(4/3) - bh[i, j]
+                            c = self.u[ni, nj]**2 / (2 * self.g) + new_d[ni, nj] + self.z[ni, nj] + (self.dx / 2) * (self.n[i, j]**2 * self.v[i, j]**2) / self.d[i, j]**(4/3) - bh[i, j]
 
                             root1, root2 = self.solve_quadratic(a, b, c)
                             if root1 > 0: v_new[i, j, 1] = root1
@@ -349,7 +363,7 @@ class SWFCA_Model:
 
                         elif idx == 2: # u(0,3)
                             b = (self.dx / 2) * ((self.n[ni, nj]**2 * np.abs(self.u[ni, nj]+epsilon)) / (new_d[ni, nj]**(4/3)))
-                            c = self.v[ni, nj]**2 / (2 * g) + new_d[ni, nj] + self.z[ni, nj] + (self.dx / 2) * (self.n[i, j]**2 * self.u[i, j]**2) / self.d[i, j]**(4/3) - bh[i, j]
+                            c = self.v[ni, nj]**2 / (2 * self.g) + new_d[ni, nj] + self.z[ni, nj] + (self.dx / 2) * (self.n[i, j]**2 * self.u[i, j]**2) / self.d[i, j]**(4/3) - bh[i, j]
 
                             root1, root2 = self.solve_quadratic(a, -b, c)
                             if root1 < 0: v_new[i, j, 2] = root1
@@ -358,7 +372,7 @@ class SWFCA_Model:
 
                         elif idx == 3: # v(0,4)
                             b = (self.dx / 2) * ((self.n[ni, nj]**2 * np.abs(self.v[ni, nj]+epsilon)) / (new_d[ni, nj]**(4/3)))
-                            c = self.u[ni, nj]**2 / (2 * g) + new_d[ni, nj] + self.z[ni, nj] + (self.dx / 2) * (self.n[i, j]**2 * self.v[i, j]**2) / self.d[i, j]**(4/3) - bh[i, j]
+                            c = self.u[ni, nj]**2 / (2 * self.g) + new_d[ni, nj] + self.z[ni, nj] + (self.dx / 2) * (self.n[i, j]**2 * self.v[i, j]**2) / self.d[i, j]**(4/3) - bh[i, j]
 
                             root1, root2 = self.solve_quadratic(a, -b, c)
                             if root1 < 0: v_new[i, j, 3] = root1
@@ -446,12 +460,14 @@ class SWFCA_Model:
         dts = [self.dt]
         bhs = []
 
+        flux = np.zeros((*self.grid_shape, 4))
+
         for step in range(num_steps):
-            flux = np.zeros((*self.grid_shape, 4))
             bh = self.compute_bernoulli_head(self.z, self.d, self.u, self.v)
             flow_dir = self.step1_determine_flow_direction(self.d, bh, flux)
-            flux = self.step2_update_mass_flux(flow_dir, bh)
-            d_new, dd = self.step3_predict_water_depth(flux, bh, flow_dir)
+            flux = self.step2_update_mass_flux(flow_dir, bh, flux_prev=flux)
+            d_new, dd = self.water_depth_euler(flux, bh, flow_dir)
+            # d_new = self.water_depth_rk4(flow_dir, bh)
             v_new = self.step4_predict_velocity(d_new, flow_dir, bh)
             self.step5_update_fields(d_new, v_new)
             
