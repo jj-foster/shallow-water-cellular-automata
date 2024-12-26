@@ -14,7 +14,7 @@ class SWFCA_Model:
     def __init__(
             self, grid_shape, d, u, v, z, dx, CFL, manning_n,
             closed_bc = np.array([[0]]), inlet_bc = np.array([[0]]),
-            outlet_bc = np.array([[0]]),
+            flux_outlet_bc = np.array([[0]]), pressure_outlet_bc = np.array([[0]]),
             bh_tolerance=0.1, depth_threshold=0.1):
         """_summary_
 
@@ -49,10 +49,14 @@ class SWFCA_Model:
             self.inlet_boundaries = inlet_bc # inlet mass flux (Q, theta_idx)
         else:
             self.inlet_boundaries = np.zeros(grid_shape, dtype=bool)
-        if np.any(outlet_bc):
-            self.outlet_boundaries = outlet_bc # outlet mass flux Q
+        if np.any(flux_outlet_bc):
+            self.flux_outlet_bc = flux_outlet_bc # outlet mass flux Q
         else:
-            self.outlet_boundaries = np.zeros(grid_shape, dtype=bool)
+            self.flux_outlet_bc = np.zeros(grid_shape, dtype=bool)
+        if np.any(pressure_outlet_bc):
+            self.pressure_outlet_bc = pressure_outlet_bc # outlet mass flux Q
+        else:
+            self.pressure_outlet_bc = np.zeros(grid_shape, dtype=bool)
 
         self.special_case = np.zeros(grid_shape, dtype=bool)
 
@@ -240,6 +244,7 @@ class SWFCA_Model:
 
         while iteration < max_iterations:
             new_d = np.copy(self.d)
+            dd = np.zeros_like(self.d)
             iteration += 1
             negative_depth = False
             flow_dir_changed = False
@@ -266,7 +271,8 @@ class SWFCA_Model:
                             net_flux += flux[i, j, idx]
                             net_flux += flux[ni, nj, (idx + 2) % 4]
 
-                    new_d[i, j] += self.dt * net_flux / (self.dx ** 2)
+                    dd[i, j] = self.dt * net_flux / (self.dx ** 2)
+                    new_d[i, j] += dd[i, j]
 
                     # Check for negative depth
                     if new_d[i, j] < 0:
@@ -295,8 +301,8 @@ class SWFCA_Model:
             self.dt *= 0.5
 
             print(f"Reducing time step to {self.dt}; Iteration {iteration}")
-
-        return new_d
+        
+        return new_d, dd
 
     @staticmethod
     def solve_quadratic(a, b, c):
@@ -369,14 +375,17 @@ class SWFCA_Model:
         R = lambda u : 1 if u > 0 else 0
         for i in range(self.grid_shape[0]):
             for j in range(self.grid_shape[1]):
-                u01 = v_new[i, j+1, 2] if j < self.grid_shape[1]-1 else 0
-                v02 = v_new[i-1, j, 3] if i > 0 else 0
-                u03 = v_new[i, j-1, 0] if j > 0 else 0                   
-                v04 = v_new[i+1, j, 1] if i < self.grid_shape[0]-1 else 0                   
+                if not self.is_closed(i, j):
+                    u01 = v_new[i, j+1, 2] if j < self.grid_shape[1]-1 else 0
+                    v02 = v_new[i-1, j, 3] if i > 0 else 0
+                    u03 = v_new[i, j-1, 0] if j > 0 else 0                   
+                    v04 = v_new[i+1, j, 1] if i < self.grid_shape[0]-1 else 0                   
 
-                self.u[i, j] = R(-u01) * u01 + R(u03) * u03
-                self.v[i, j] = R(-v02) * v02 + R(v04) * v04
+                    self.u[i, j] = R(-u01) * u01 + R(u03) * u03
+                    self.v[i, j] = R(-v02) * v02 + R(v04) * v04
 
+        self.bh = self.compute_bernoulli_head(self.z,self.d,self.u, self.v)
+        
     def inlet_boundary(self):
         """Applies inlet boundary condition. Assumes subcritical inlet flow
         """
@@ -401,20 +410,32 @@ class SWFCA_Model:
                     elif theta_idx == 3:
                         self.v[i, j] = -speed
            
-    def outlet_boundary(self):
+    def flux_outlet_boundary(self):
         """Applies outlet boundary condition. Assumes subcritical outlet flow
         """
         for i in range(self.grid_shape[0]):
             for j in range(self.grid_shape[1]):
-                if self.outlet_boundaries[i, j] != 0:
+                if self.flux_outlet_bc[i, j] != 0:
                     # Get outlet parameters
-                    Q = self.outlet_boundaries[i, j]  # Specified downstream depth
+                    Q = self.flux_outlet_bc[i, j]  # Specified downstream depth
 
                     # Update water depth
                     dV = Q * self.dt
                     self.d[i, j] -= dV / self.dx**2
                     if self.d[i, j] < 0:
                         self.d[i, j] = 0
+
+    def pressure_outlet_boundary(self, dd):
+        for i in range(self.grid_shape[0]):
+            for j in range(self.grid_shape[1]):
+                if self.pressure_outlet_bc[i, j] != 0:
+                    # undo change in water depth
+                    # (water passes in and straight ouf of cell)
+                    self.d[i, j] -= dd[i, j]
+
+                    # set 
+                    self.u[i, j] = 0
+                    self.v[i, j] = self.v[i-1, j]
 
     def run_simulation(self, num_steps):
         """Run the simulation for a specified number of steps."""
@@ -430,14 +451,16 @@ class SWFCA_Model:
             bh = self.compute_bernoulli_head(self.z, self.d, self.u, self.v)
             flow_dir = self.step1_determine_flow_direction(self.d, bh, flux)
             flux = self.step2_update_mass_flux(flow_dir, bh)
-            d_new = self.step3_predict_water_depth(flux, bh, flow_dir)
+            d_new, dd = self.step3_predict_water_depth(flux, bh, flow_dir)
             v_new = self.step4_predict_velocity(d_new, flow_dir, bh)
             self.step5_update_fields(d_new, v_new)
             
             if np.any(self.inlet_boundaries):
                 self.inlet_boundary()
-            if np.any(self.outlet_boundaries):
-                self.outlet_boundary()
+            if np.any(self.flux_outlet_bc):
+                self.flux_outlet_boundary()
+            if np.any(self.pressure_outlet_bc):
+                self.pressure_outlet_boundary(dd)
 
             self.iteration += 1
             self.update_timestep()
@@ -449,52 +472,3 @@ class SWFCA_Model:
             bhs.append(bh)
 
         return water_depths, us, vs, dts, bhs
-
-if __name__== "__main__":
-
-    # Example usage
-    grid_shape = (1,1)
-    dx = 1.0
-    CFL = 0.15
-    manning_n = np.full(grid_shape, 0.2)
-    depth_threshold = 0.01
-    hydrodynamic_head_threshold = 0.01
-
-    num_steps = 100
-
-    d = np.zeros(grid_shape)
-    d[:,:] = 1.0
-    # d[0,0] = 1.5
-
-    z = np.zeros(grid_shape)
-    # z = np.array([[0.5, 0.4, 0.3, 0.2, 0.1]])
-    # z = np.array([[0.5, 0]])
-
-    u = np.zeros(grid_shape)
-    v = np.zeros(grid_shape)
-
-    closed_boundaries = np.zeros(grid_shape, dtype=bool)
-    # closed_boundaries[0,2] = True
-
-    inlet_bc = np.zeros(grid_shape + (2,))
-    inlet_bc[0,0] = (1.1, 0)
-
-    outlet_bc = np.zeros(grid_shape)
-    outlet_bc[0,0] = 1
-
-    model = SWFCA_Model(
-        grid_shape, d, u, v, z, dx, CFL, manning_n,
-        closed_bc=closed_boundaries, inlet_bc=inlet_bc, outlet_bc=outlet_bc,
-        bh_tolerance=hydrodynamic_head_threshold
-    )
-    water_depths, us, vs, dt, bh = model.run_simulation(num_steps=num_steps)
-    avg_water_depths = [np.mean(depth) for depth in water_depths]
-    std_bh = [np.std(h) for h in bh]
-    print(std_bh[-1])
-
-    plot_iteration_dependent_variable([dt, std_bh], ["dt (s)", "Hydrodynamic head std"])
-
-    # visualize_cell_parameter(us, interval=500)
-    visualize_cell_parameter(bh, interval=100)
-    # visualize_cell_parameter(vs, interval=100)
-    # visualize_water_depth_3d(water_depths, interval=100)
