@@ -139,6 +139,7 @@ class SWFCA_Model:
                     if self.is_wet(d[i,j]) \
                     and self.is_greater_bh(bh[i, j], bh[ni, nj]) \
                     and self.is_outward_flow(flux[i, j, theta_idx], theta_idx) \
+                    and not self.is_closed(i, j) \
                     and not self.is_closed(ni, nj): # apply closed boundary condition
                         flow_dir[i, j, theta_idx] = 1
                     else:
@@ -147,10 +148,11 @@ class SWFCA_Model:
                         and self.is_wet(d[ni, nj]) \
                         and not self.is_greater_bh(bh[i, j], bh[ni, nj]) \
                         and self.is_outward_flow_special_case(flux[i, j, theta_idx], theta_idx) \
+                        and not self.is_closed(i, j) \
                         and not self.is_closed(ni, nj): # apply closed boundary condition
                             flow_dir[i, j, theta_idx] = 1
                             self.special_case[i, j, theta_idx] = True
-                            print("special case at", i, j, "at iteration", self.iteration)
+                            print("special case at", i, j, theta_idx,"at iteration", self.iteration)
 
         return flow_dir
     
@@ -232,6 +234,8 @@ class SWFCA_Model:
                                 flux_prev[i, j, theta_idx], bh[i, j], bh[ni, nj], self.d[ni, nj]
                             )
 
+                            print(flux_prev[i,j,theta_idx], flux_new[i,j,theta_idx])
+
         return flux_new
     
     def flow_direction_unchanged(self, bh, zi, new_di, ui, vi):
@@ -240,7 +244,7 @@ class SWFCA_Model:
 
     def water_depth_euler(self, flux, bh, flow_dir):
         """Predict water depth based on mass conservation."""
-        max_iterations = 10
+        max_iterations = 20
         iteration = 0
 
         while iteration < max_iterations:
@@ -278,7 +282,6 @@ class SWFCA_Model:
                     # Check for negative depth
                     if new_d[i, j] < 0:
                         negative_depth = True
-                        print(new_d[i, j])
                         break
                     elif new_d[i, j] < 0 and iteration == max_iterations - 1:
                         new_d[i, j] = 0
@@ -300,7 +303,7 @@ class SWFCA_Model:
                                 if (not change_dir and not self.special_case[i,j,idx]) \
                                 or (change_dir and self.special_case[i,j,idx]):
                                     flow_dir_changed = True
-                                    print("AH",self.iteration,i,j)
+                                    # print("AH",self.iteration,i,j)
                                     break
                         
                         if flow_dir_changed:
@@ -332,8 +335,6 @@ class SWFCA_Model:
         """Predict water velocity based on the updated depth."""
     
         v_new = np.zeros((*self.grid_shape, 4))
-        # epsilon = 1e-6
-        epsilon = 0
 
         for i in range(self.grid_shape[0]):
             for j in range(self.grid_shape[1]):
@@ -344,7 +345,7 @@ class SWFCA_Model:
                         # Compute the velocity
                         a = 1/(2 * self.g)
                         if idx == 0: # u(0,1)
-                            b = (self.dx / 2) * ((self.n[ni, nj]**2 * np.abs(self.u[ni, nj]+epsilon)) / (new_d[ni, nj]**(4/3)))
+                            b = (self.dx / 2) * ((self.n[ni, nj]**2 * np.abs(self.u[ni, nj])) / (new_d[ni, nj]**(4/3)))
                             c = self.v[ni, nj]**2 / (2 * self.g) + new_d[ni, nj] + self.z[ni, nj] + (self.dx / 2) * (self.n[i, j]**2 * self.u[i, j]**2) / self.d[i, j]**(4/3) - bh[i, j]
 
                             root1, root2 = self.solve_quadratic(a, b, c)
@@ -353,7 +354,7 @@ class SWFCA_Model:
                             else : v_new[i, j, 0] = 0
 
                         elif idx == 1: # v(0,2)
-                            b = (self.dx / 2) * ((self.n[ni, nj]**2 * np.abs(self.v[ni, nj]+epsilon)) / (new_d[ni, nj]**(4/3)))
+                            b = (self.dx / 2) * ((self.n[ni, nj]**2 * np.abs(self.v[ni, nj])) / (new_d[ni, nj]**(4/3)))
                             c = self.u[ni, nj]**2 / (2 * self.g) + new_d[ni, nj] + self.z[ni, nj] + (self.dx / 2) * (self.n[i, j]**2 * self.v[i, j]**2) / self.d[i, j]**(4/3) - bh[i, j]
 
                             root1, root2 = self.solve_quadratic(a, b, c)
@@ -362,7 +363,7 @@ class SWFCA_Model:
                             else : v_new[i, j, 1] = 0
 
                         elif idx == 2: # u(0,3)
-                            b = (self.dx / 2) * ((self.n[ni, nj]**2 * np.abs(self.u[ni, nj]+epsilon)) / (new_d[ni, nj]**(4/3)))
+                            b = (self.dx / 2) * ((self.n[ni, nj]**2 * np.abs(self.u[ni, nj])) / (new_d[ni, nj]**(4/3)))
                             c = self.v[ni, nj]**2 / (2 * self.g) + new_d[ni, nj] + self.z[ni, nj] + (self.dx / 2) * (self.n[i, j]**2 * self.u[i, j]**2) / self.d[i, j]**(4/3) - bh[i, j]
 
                             root1, root2 = self.solve_quadratic(a, -b, c)
@@ -371,13 +372,17 @@ class SWFCA_Model:
                             else : v_new[i, j, 2] = 0
 
                         elif idx == 3: # v(0,4)
-                            b = (self.dx / 2) * ((self.n[ni, nj]**2 * np.abs(self.v[ni, nj]+epsilon)) / (new_d[ni, nj]**(4/3)))
+                            b = (self.dx / 2) * ((self.n[ni, nj]**2 * np.abs(self.v[ni, nj])) / (new_d[ni, nj]**(4/3)))
                             c = self.u[ni, nj]**2 / (2 * self.g) + new_d[ni, nj] + self.z[ni, nj] + (self.dx / 2) * (self.n[i, j]**2 * self.v[i, j]**2) / self.d[i, j]**(4/3) - bh[i, j]
 
                             root1, root2 = self.solve_quadratic(a, -b, c)
                             if root1 < 0: v_new[i, j, 3] = root1
                             elif root2 < 0: v_new[i, j, 3] = root2
                             else : v_new[i, j, 3] = 0
+        
+                        if v_new[i,j,idx]==0:
+                            # print("0!",new_d[i,j],new_d[ni,nj])
+                            print("0!", b, c, i,j,idx ,self.iteration)
 
         return v_new
 
@@ -398,7 +403,6 @@ class SWFCA_Model:
                     self.u[i, j] = R(-u01) * u01 + R(u03) * u03
                     self.v[i, j] = R(-v02) * v02 + R(v04) * v04
 
-        self.bh = self.compute_bernoulli_head(self.z,self.d,self.u, self.v)
         
     def inlet_boundary(self):
         """Applies inlet boundary condition. Assumes subcritical inlet flow
@@ -451,6 +455,14 @@ class SWFCA_Model:
                     self.u[i, j] = 0
                     self.v[i, j] = self.v[i-1, j]
 
+    def closed_boundary(self):
+        for i in range(self.grid_shape[0]):
+            for j in range(self.grid_shape[1]):
+                if self.is_closed(i, j):
+                    self.d[i,j] = 0
+                    self.u[i,j] = 0
+                    self.v[i,j] = 0
+
     def run_simulation(self, num_steps):
         """Run the simulation for a specified number of steps."""
 
@@ -477,6 +489,8 @@ class SWFCA_Model:
                 self.flux_outlet_boundary()
             if np.any(self.pressure_outlet_bc):
                 self.pressure_outlet_boundary(dd)
+            if np.any(self.closed_boundaries):
+                self.closed_boundary()
 
             self.iteration += 1
             self.update_timestep()

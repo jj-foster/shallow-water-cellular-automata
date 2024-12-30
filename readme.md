@@ -4,7 +4,10 @@ debug notes:
   - If manning_n is low, the simulation tends to oscillate because inertia is not damped
 - bh_tolerance dictates when the simulation ends (hydrodynamic head difference between cells)
 
-- pressure outlet bc needs tweaking. Acceleration into the boundary shouldn't happen
+- pressure outlet bc needs tweaking. Acceleration into the boundary shouldn't happen(?)
+
+- possible error with inlet boundary condition - velocity propagation
+  - possibly related: hydrodynamic head looks smooth but water depth isn't
 
 - visualise by fixed timestep rather than iteration?
 

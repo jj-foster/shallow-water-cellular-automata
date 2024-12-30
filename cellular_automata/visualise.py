@@ -6,7 +6,7 @@ import matplotlib.animation as animation
 import numpy as np
 
 def visualize_cell_parameter(
-        time_series_data, zmax=None, zmin=None, interval=100,save=False,filename=None):
+        time_series_data, zmax=None, zmin=None, interval=100,save=False,filename=None,zlabel=None):
     """
     Visualize the water depth with time in an animation.
     
@@ -14,9 +14,10 @@ def visualize_cell_parameter(
     time_series_data (list of 2D arrays): A list where each element is a 2D array representing water depth at a specific time.
     """
     fig, ax = plt.subplots()
-    # ax.set_xticks(np.arange(0, time_series_data[0].shape[1], 1), minor=True)
-    # ax.set_yticks(np.arange(0, time_series_data[0].shape[0], 1), minor=True)
-
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    ax.xaxis.set_label_position("bottom")
+    ax.tick_params(axis="x",which="both", bottom=True, top=False)
     # Determine the maximum value across all time steps
 
     if zmin == None:
@@ -25,7 +26,10 @@ def visualize_cell_parameter(
         zmax = np.max([np.max(data) for data in time_series_data])
     
     cax = ax.matshow(time_series_data[0], cmap='coolwarm', vmin=zmin, vmax=zmax)
-    fig.colorbar(cax)
+    cb = fig.colorbar(cax)
+
+    if zlabel != None:
+        cb.set_label(zlabel)
 
     frame_text = ax.text(0.02, 0.95, '', transform=ax.transAxes, color='white', fontsize=12, bbox=dict(facecolor='black', alpha=0.5))
 
