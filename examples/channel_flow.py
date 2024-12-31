@@ -8,7 +8,7 @@ from cellular_automata.visualise import *
 import numpy as np
 
 
-grid_shape = (10,1)
+grid_shape = (1,10)
 dx = 1.0
 CFL = 0.5
 manning_n = np.full(grid_shape, 0.001)
@@ -26,7 +26,7 @@ z = np.zeros(grid_shape)
 u = np.zeros(grid_shape)
 v = np.zeros(grid_shape)
 # v[:,3:7] = 0.1
-v[:,0] = 0.1
+# v[0,:] = 0.1
 
 closed_boundaries = np.zeros(grid_shape, dtype=bool)
 # closed_boundaries = np.array([
@@ -46,7 +46,7 @@ inlet_bc = np.zeros(grid_shape + (2,))
 # inlet_bc[0,0] = (0.1, 3)
 
 pressure_outlet_bc = np.zeros(grid_shape)
-pressure_outlet_bc[-1,0] = True
+pressure_outlet_bc[0,-1] = True
 
 # flux_outlet_bc = np.zeros(grid_shape)
 # flux_outlet_bc[-1,0] = 0.3
@@ -67,9 +67,9 @@ print(std_bh[-1])
 # plot_iteration_dependent_variable([dt, std_bh], ["dt (s)", "Hydrodynamic head std"])
 
 
-visualize_cell_parameter(bhs, interval=500)
-# visualize_cell_parameter(ds, interval=100)
-# visualize_cell_parameter(vs, interval=100)
+visualize_cell_parameter(bhs, interval=1000)
+visualize_cell_parameter(ds, interval=1000)
+visualize_cell_parameter(us, interval=1000,split=True)
 # visualize_water_depth_3d(ds, interval=100)
 
 v_avg = -np.mean([v[-20:,0] for v in vs],axis=0)

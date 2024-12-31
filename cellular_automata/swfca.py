@@ -11,7 +11,8 @@ class SWFCA_Model:
             self, grid_shape, d, u, v, z, dx, CFL, manning_n,
             closed_bc = np.array([[0]]), inlet_bc = np.array([[0]]),
             flux_outlet_bc = np.array([[0]]), pressure_outlet_bc = np.array([[0]]),
-            bh_tolerance=0.1, depth_threshold=0.1):
+            bh_tolerance=0.1, depth_threshold=0.1, vel_n = None
+        ):
         """_summary_
 
         Args:
@@ -57,6 +58,8 @@ class SWFCA_Model:
         self.special_case = np.zeros(grid_shape, dtype=bool)
 
         self.n = manning_n  # Manning's roughness coefficient
+        if type(vel_n) == np.ndarray: self.vel_n = vel_n
+        else: self.vel_n = manning_n
         self.bh_tolerance = bh_tolerance
         self.depth_threshold = depth_threshold
 
@@ -152,7 +155,7 @@ class SWFCA_Model:
                         and not self.is_closed(ni, nj): # apply closed boundary condition
                             flow_dir[i, j, theta_idx] = 1
                             self.special_case[i, j, theta_idx] = True
-                            print("special case at", i, j, theta_idx,"at iteration", self.iteration)
+                            print("special case at", i, j, theta_idx,"at frame", self.iteration+1)
 
         return flow_dir
     
@@ -316,7 +319,7 @@ class SWFCA_Model:
 
             # Reduce the time step and recompute
             self.dt *= 0.5
-            print(f"Reducing time step to {self.dt}; Iteration {iteration}")
+            print(f"Reducing time step to {self.dt}; Try {iteration}")
             iteration += 1
         
         return new_d, dd
@@ -345,8 +348,8 @@ class SWFCA_Model:
                         # Compute the velocity
                         a = 1/(2 * self.g)
                         if idx == 0: # u(0,1)
-                            b = (self.dx / 2) * ((self.n[ni, nj]**2 * np.abs(self.u[ni, nj])) / (new_d[ni, nj]**(4/3)))
-                            c = self.v[ni, nj]**2 / (2 * self.g) + new_d[ni, nj] + self.z[ni, nj] + (self.dx / 2) * (self.n[i, j]**2 * self.u[i, j]**2) / self.d[i, j]**(4/3) - bh[i, j]
+                            b = (self.dx / 2) * ((self.vel_n[ni, nj]**2 * np.abs(self.u[ni, nj])) / (new_d[ni, nj]**(4/3)))
+                            c = self.v[ni, nj]**2 / (2 * self.g) + new_d[ni, nj] + self.z[ni, nj] + (self.dx / 2) * (self.vel_n[i, j]**2 * self.u[i, j]**2) / self.d[i, j]**(4/3) - bh[i, j]
 
                             root1, root2 = self.solve_quadratic(a, b, c)
                             if root1 > 0: v_new[i, j, 0] = root1
@@ -354,8 +357,8 @@ class SWFCA_Model:
                             else : v_new[i, j, 0] = 0
 
                         elif idx == 1: # v(0,2)
-                            b = (self.dx / 2) * ((self.n[ni, nj]**2 * np.abs(self.v[ni, nj])) / (new_d[ni, nj]**(4/3)))
-                            c = self.u[ni, nj]**2 / (2 * self.g) + new_d[ni, nj] + self.z[ni, nj] + (self.dx / 2) * (self.n[i, j]**2 * self.v[i, j]**2) / self.d[i, j]**(4/3) - bh[i, j]
+                            b = (self.dx / 2) * ((self.vel_n[ni, nj]**2 * np.abs(self.v[ni, nj])) / (new_d[ni, nj]**(4/3)))
+                            c = self.u[ni, nj]**2 / (2 * self.g) + new_d[ni, nj] + self.z[ni, nj] + (self.dx / 2) * (self.vel_n[i, j]**2 * self.v[i, j]**2) / self.d[i, j]**(4/3) - bh[i, j]
 
                             root1, root2 = self.solve_quadratic(a, b, c)
                             if root1 > 0: v_new[i, j, 1] = root1
@@ -363,8 +366,8 @@ class SWFCA_Model:
                             else : v_new[i, j, 1] = 0
 
                         elif idx == 2: # u(0,3)
-                            b = (self.dx / 2) * ((self.n[ni, nj]**2 * np.abs(self.u[ni, nj])) / (new_d[ni, nj]**(4/3)))
-                            c = self.v[ni, nj]**2 / (2 * self.g) + new_d[ni, nj] + self.z[ni, nj] + (self.dx / 2) * (self.n[i, j]**2 * self.u[i, j]**2) / self.d[i, j]**(4/3) - bh[i, j]
+                            b = (self.dx / 2) * ((self.vel_n[ni, nj]**2 * np.abs(self.u[ni, nj])) / (new_d[ni, nj]**(4/3)))
+                            c = self.v[ni, nj]**2 / (2 * self.g) + new_d[ni, nj] + self.z[ni, nj] + (self.dx / 2) * (self.vel_n[i, j]**2 * self.u[i, j]**2) / self.d[i, j]**(4/3) - bh[i, j]
 
                             root1, root2 = self.solve_quadratic(a, -b, c)
                             if root1 < 0: v_new[i, j, 2] = root1
@@ -372,8 +375,8 @@ class SWFCA_Model:
                             else : v_new[i, j, 2] = 0
 
                         elif idx == 3: # v(0,4)
-                            b = (self.dx / 2) * ((self.n[ni, nj]**2 * np.abs(self.v[ni, nj])) / (new_d[ni, nj]**(4/3)))
-                            c = self.u[ni, nj]**2 / (2 * self.g) + new_d[ni, nj] + self.z[ni, nj] + (self.dx / 2) * (self.n[i, j]**2 * self.v[i, j]**2) / self.d[i, j]**(4/3) - bh[i, j]
+                            b = (self.dx / 2) * ((self.vel_n[ni, nj]**2 * np.abs(self.v[ni, nj])) / (new_d[ni, nj]**(4/3)))
+                            c = self.u[ni, nj]**2 / (2 * self.g) + new_d[ni, nj] + self.z[ni, nj] + (self.dx / 2) * (self.vel_n[i, j]**2 * self.v[i, j]**2) / self.d[i, j]**(4/3) - bh[i, j]
 
                             root1, root2 = self.solve_quadratic(a, -b, c)
                             if root1 < 0: v_new[i, j, 3] = root1
@@ -382,7 +385,7 @@ class SWFCA_Model:
         
                         if v_new[i,j,idx]==0:
                             # print("0!",new_d[i,j],new_d[ni,nj])
-                            print("0!", b, c, i,j,idx ,self.iteration)
+                            print(f"0 at frame {self.iteration+1}.", b, c, i,j, idx)
 
         return v_new
 
@@ -479,6 +482,7 @@ class SWFCA_Model:
             flow_dir = self.step1_determine_flow_direction(self.d, bh, flux)
             flux = self.step2_update_mass_flux(flow_dir, bh, flux_prev=flux)
             d_new, dd = self.water_depth_euler(flux, bh, flow_dir)
+            # d_new = np.full(self.grid_shape,1.0)
             # d_new = self.water_depth_rk4(flow_dir, bh)
             v_new = self.step4_predict_velocity(d_new, flow_dir, bh)
             self.step5_update_fields(d_new, v_new)

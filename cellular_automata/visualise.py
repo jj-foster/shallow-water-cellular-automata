@@ -6,46 +6,84 @@ import matplotlib.animation as animation
 import numpy as np
 
 def visualize_cell_parameter(
-        time_series_data, zmax=None, zmin=None, interval=100,save=False,filename=None,zlabel=None):
+        time_series_data, zmax=None, zmin=None, interval=100,save=False,
+        filename=None,zlabel=None,split=False
+    ):
     """
     Visualize the water depth with time in an animation.
     
     Parameters:
     time_series_data (list of 2D arrays): A list where each element is a 2D array representing water depth at a specific time.
     """
-    fig, ax = plt.subplots()
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
-    ax.xaxis.set_label_position("bottom")
-    ax.tick_params(axis="x",which="both", bottom=True, top=False)
-    # Determine the maximum value across all time steps
+    if split:
+        # Determine the number of rows and columns for the grid layout
+        n_frames = len(time_series_data)
+        n_cols = int(np.ceil(np.sqrt(n_frames)))
+        n_rows = int(np.ceil(n_frames / n_cols))
 
-    if zmin == None:
-        zmin = np.min([np.min(data) for data in time_series_data])
-    if zmax == None:
-        zmax = np.max([np.max(data) for data in time_series_data])
-    
-    cax = ax.matshow(time_series_data[0], cmap='coolwarm', vmin=zmin, vmax=zmax)
-    cb = fig.colorbar(cax)
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(n_cols * 4, n_rows * 4))
+        axes = np.array(axes).flatten()  # Flatten to ensure indexing works even if grid isn't square
+        
+        if zmin is None:
+            zmin = np.min([np.min(data) for data in time_series_data])
+        if zmax is None:
+            zmax = np.max([np.max(data) for data in time_series_data])
 
-    if zlabel != None:
-        cb.set_label(zlabel)
+        for i, data in enumerate(time_series_data):
+            ax = axes[i]
+            cax = ax.matshow(data, cmap='coolwarm', vmin=zmin, vmax=zmax)
+            ax.set_title(f'Frame: {i}')
+            ax.set_xlabel("x")
+            ax.set_ylabel("y")
+            ax.xaxis.set_label_position("bottom")
+            ax.tick_params(axis="x", which="both", bottom=True, top=False)
 
-    frame_text = ax.text(0.02, 0.95, '', transform=ax.transAxes, color='white', fontsize=12, bbox=dict(facecolor='black', alpha=0.5))
+        # Remove any unused subplots
+        for j in range(len(time_series_data), len(axes)):
+            fig.delaxes(axes[j])
 
-    def update(frame):
-        cax.set_array(time_series_data[frame])
-        frame_text.set_text(f'Frame: {frame}')
+        # Add a single color bar for all subplots
+        fig.colorbar(cax, ax=axes, orientation='vertical', fraction=0.02,
+                     pad=0.04, label=zlabel)
 
-        return cax, frame_text
+        # plt.tight_layout()
+        if save and filename:
+            plt.savefig(filename)
+        plt.show()
+    else:
+        fig, ax = plt.subplots()
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        ax.xaxis.set_label_position("bottom")
+        ax.tick_params(axis="x",which="both", bottom=True, top=False)
+        # Determine the maximum value across all time steps
 
-    ani = animation.FuncAnimation(fig, update, frames=len(time_series_data), blit=True, interval=interval)
-    
-    if save:
-        Writer = animation.FFMpegWriter(fps=10)
-        ani.save(filename, writer=Writer)
+        if zmin == None:
+            zmin = np.min([np.min(data) for data in time_series_data])
+        if zmax == None:
+            zmax = np.max([np.max(data) for data in time_series_data])
+        
+        cax = ax.matshow(time_series_data[0], cmap='coolwarm', vmin=zmin, vmax=zmax)
+        cb = fig.colorbar(cax)
 
-    plt.show()
+        if zlabel != None:
+            cb.set_label(zlabel)
+
+        frame_text = ax.text(0.02, 0.95, '', transform=ax.transAxes, color='white', fontsize=12, bbox=dict(facecolor='black', alpha=0.5))
+
+        def update(frame):
+            cax.set_array(time_series_data[frame])
+            frame_text.set_text(f'Frame: {frame}')
+
+            return cax, frame_text
+
+        ani = animation.FuncAnimation(fig, update, frames=len(time_series_data), blit=True, interval=interval)
+        
+        if save:
+            Writer = animation.FFMpegWriter(fps=10)
+            ani.save(filename, writer=Writer)
+
+        plt.show()
 
 def visualize_water_depth_3d(time_series_data, interval=100, z_max=None):
     """

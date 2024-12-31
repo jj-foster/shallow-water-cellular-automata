@@ -6,8 +6,8 @@ debug notes:
 
 - pressure outlet bc needs tweaking. Acceleration into the boundary shouldn't happen(?)
 
-- possible error with inlet boundary condition - velocity propagation
-  - possibly related: hydrodynamic head looks smooth but water depth isn't
+- velocity can propagate unbound by timestep if inertia dominates. 
+  - exapmle 2d_corner_impulse - timestep gets squashed because of high velocities so depth doesn't change. However, because of high velocities, inertial term in velocity equations continues to drive high inertia flux.
 
 - visualise by fixed timestep rather than iteration?
 
