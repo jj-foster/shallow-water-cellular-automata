@@ -74,7 +74,7 @@ class WCA2D:
                 dV_total = 0
                 for i, (r, c) in enumerate(downstream_neighbors):
                     dl = l0 - self.l[r, c]
-                    if abs(r-row) != abs(c - col):
+                    if abs(r-row) == abs(c - col):
                         dV_0i[i] = (self.dx**2 / np.sqrt(2)) * max(dl, 0) # Diagonal cell (Moore's neighbourhood)
                     else:
                         dV_0i[i] = self.dx**2 * max(dl, 0)
@@ -97,7 +97,7 @@ class WCA2D:
                 dl0_M = l0 - self.l[r_M, c_M] # water level of cell with largest weight
                 # distance between the centre of the central cell and the centre of cell with the largest weight
                 # dx0_M = self.dx 
-                if abs(r_M - row) != abs(c_M - col):
+                if abs(r_M - row) == abs(c_M - col):
                     dx0_M = self.dx * np.sqrt(2) # diagonal cell (Moore's neighbourhood)
                 else:
                     dx0_M = self.dx
@@ -109,7 +109,7 @@ class WCA2D:
                 # max possible intercellular volume (I_M)
                 # Length of the cell edge with largest weight
                 # de_M = self.dx  
-                if abs(r_M - row) != abs(c_M - col):
+                if abs(r_M - row) == abs(c_M - col):
                     de_M = self.dx * np.sqrt(2) # diagonal cell (Moore's neighbourhood)
                 else:
                     de_M = self.dx
@@ -132,7 +132,7 @@ class WCA2D:
 
                 # Update water depth for the next time step
                 I_i_total = sum(I_i)
-                new_d[row, col] = d0 - I_i_total / A0
+                new_d[row, col] = new_d[row, col] - I_i_total / A0
 
         return new_d, new_I_total
     
@@ -148,7 +148,7 @@ class WCA2D:
         """
         time = 0
 
-        ds = []
+        ds = [self.d]
 
 
         while time < total_time:
@@ -168,13 +168,14 @@ class WCA2D:
 
 if __name__ == "__main__":
     grid_shape = (5, 5)
-    # z = np.array([
-    #     [2, 2, 2, 2, 2],
-    #     [2, 1, 1, 1, 2],
-    #     [2, 1, 0, 1, 2],
-    #     [2, 1, 1, 1, 2],
-    #     [2, 2, 2, 2, 2]])
+    
     z = np.zeros(grid_shape)
+    z = np.array([
+        [2, 2, 2, 2, 2],
+        [2, 1, 1, 1, 2],
+        [2, 1, 0, 1, 2],
+        [2, 1, 1, 1, 2],
+        [2, 2, 2, 2, 2]])
 
     d = np.full(grid_shape, 0.0)
     d[0, 0] = 1.0
@@ -183,11 +184,11 @@ if __name__ == "__main__":
     n = 0.03
 
     total_time = 10.0
-    dt = 1
+    dt = 0.1
     output_interval = 0.5
 
     wca = WCA2D(grid_shape, z, d, dx=1.0, dt=dt, depth_tolerance=depth_tolerance, n=n)
-    ds = wca.run_simulation(total_time=10.0, output_interval=1.0, scheme="von_neumann")
+    ds = wca.run_simulation(total_time=10.0, output_interval=1.0, scheme="moore")
 
     # visualize_cell_parameter(ds, zlabel='Water Depth', interval=500)
-    visualize_water_depth_3d(ds,interval=500)
+    visualize_water_depth_3d(ds,interval=1000)
