@@ -4,8 +4,23 @@ from visualise import *
 
 class WCA2D:
     def __init__(
-            self, grid_shape, z, d, dx, depth_tolerance, n, wall_bc, inflow_bc, outflow_bc
+            self, grid_shape, z, d, dx, depth_tolerance, n,
+            wall_bc, vfr_in_bc, vfr_out_bc, open_out_bc
         ):
+        """_summary_
+
+        Args:
+            grid_shape (tuple): #rows, #cols
+            z (np.ndarray): Bed elevation. Shape like grid_shape
+            d (_type_): Initial water depths. Shape like grid_shape
+            dx (float): Rectangular cell width (m)
+            depth_tolerance (float): Minimum water depth for downstream route to be considered
+            n (float): Manning friction factor
+            wall_bc (np.ndarray): Zero-flux boundary condition. Shape like grid_shape. True/False per cell
+            vfr_in_bc (np.ndarray): Volumetric flow rate inflow boundary condition. Shape like grid_shape. dV/dt (m3/s)
+            vfr_out_bc (np.ndarray): Volumetric flow rate outflow boundary condition. Shape like grid_shape. dV/dt (m3/s)
+            open_out_bc (np.ndarraY): Open outlet boundary condition. Shape like grid_shape. True/False per cell
+        """
         self.grid_shape = grid_shape
         self.z = z
         self.d = d
@@ -16,8 +31,9 @@ class WCA2D:
         self.I_total = np.zeros_like(self.d)
 
         self.wall_bc = wall_bc
-        self.inflow_bc = inflow_bc
-        self.outflow_bc = outflow_bc
+        self.vfr_in_bc = vfr_in_bc
+        self.vfr_out_bc = vfr_out_bc
+        self.open_out_bc = open_out_bc
     
     def get_neighbours(self, row, col, scheme):
         """
@@ -146,17 +162,50 @@ class WCA2D:
                     I_i = w_i[i] * new_I_total[row, col]
                     I_ij[row, col, direction_idx] = I_i
                     new_d[r,c] += I_i / A0 # update neighbours water depth
+                    if new_d[r,c] < 0:
+                        new_d[r,c] = 0
 
                 # Update water depth for the next time step
                 I_i_total = sum(I_ij[row, col, :])
-                new_d[row, col] = new_d[row, col] - I_i_total / A0
+                new_d[row, col] = new_d[row, col] - I_i_total / A0 #\
+                    # + (self.vfr_in_bc[row, col] * self.dt) / A0 \
+                    # - (self.vfr_out_bc[row, col] * self.dt) / A0
+                
+                if new_d[row, col] < 0:
+                    new_d[row, col] = 0
 
         return new_d, new_I_total, I_ij
-    
+
+    def apply_boundary_conditions(self, new_d):
+        new_new_d = np.copy(new_d)
+
+        A = self.dx**2
+
+        for row in range(self.grid_shape[0]):
+            for col in range(self.grid_shape[1]):
+                
+                # Open outlet
+                if self.open_out_bc[row, col]:
+                    new_new_d[row, col] = self.d[row, col]
+
+                # Volumetric flow rate inflow
+                new_new_d[row, col] += self.vfr_in_bc[row, col] * self.dt / A
+
+                # Volumetric flow rate outflow
+                new_new_d[row, col] -= self.vfr_out_bc[row, col] * self.dt / A
+
+                # Wall
+                if self.wall_bc[row, col]:
+                    new_new_d[row, col] = 0
+
+
+        return new_new_d
+
+
     def compute_intercellular_velocity(self, I_ij):
         vel = np.zeros((self.grid_shape[0], self.grid_shape[1], 2))
 
-        scheme = "moore" if I_ij.shape[2] == 8 else 4
+        scheme = "moore" if I_ij.shape[2] == 8 else "von_neumann"
 
         for row in range(self.grid_shape[0]):
             for col in range(self.grid_shape[1]):
@@ -188,6 +237,7 @@ class WCA2D:
                 vel[row, col, 1] = v
 
         return vel
+
 
     def compute_hydraulic_gradient(self, row, col, scheme):
         """
@@ -250,6 +300,7 @@ class WCA2D:
         
         return min_dt
 
+
     def run_simulation(self, dt, max_dt, total_time, output_interval, scheme="von_neumann"):
         """
         Run the WCA2D simulation for a given total time.
@@ -263,10 +314,13 @@ class WCA2D:
         update_time = output_interval
 
         ds = [self.d]
-        # vs = []
+        vs = []
 
         while time < total_time:
             new_d, new_I_total, I_ij = self.compute_intercellular_volume(scheme=scheme)
+
+            new_d = self.apply_boundary_conditions(new_d)
+
             self.d = new_d
             self.l = self.z + self.d
             self.I_total = new_I_total
@@ -277,12 +331,13 @@ class WCA2D:
             if time >= update_time:
 
                 vel = self.compute_intercellular_velocity(I_ij)
+                vs.append(vel)
                 self.dt = self.update_timestep(max_dt, scheme=scheme)
                 # print(self.dt)
                 
                 update_time += output_interval
 
-        return ds
+        return ds, vs
 
 if __name__ == "__main__":
     grid_shape = (5, 5)
@@ -299,22 +354,24 @@ if __name__ == "__main__":
     d[0, 0] = 1.0
 
     wall_bc = np.zeros(grid_shape)
-    inflow_bc = np.zeros(grid_shape)
-    outflow_bc = np.zeros(grid_shape)
+    vfr_in_bc = np.zeros(grid_shape)
+    vfr_out_bc = np.zeros(grid_shape)
+    open_out_bc = np.zeros(grid_shape)
+    # open_out_bc[1,1] = True
 
     depth_tolerance = 0.01
-    n = 0.03
+    n = 0.1
 
     total_time = 10.0
-    dt = 0.05
+    dt = 0.1
     max_dt = 0.1
-    output_interval = 0.5
+    output_interval = 0.1
 
     wca = WCA2D(
         grid_shape, z, d, dx=1.0, depth_tolerance=depth_tolerance, n=n,
-        wall_bc = wall_bc, inflow_bc=inflow_bc, outflow_bc=outflow_bc
+        wall_bc = wall_bc, vfr_in_bc=vfr_in_bc, vfr_out_bc=vfr_out_bc, open_out_bc=open_out_bc
     )
-    ds = wca.run_simulation(dt, max_dt, total_time=10.0, output_interval=output_interval, scheme="moore")
+    ds, vs = wca.run_simulation(dt, max_dt, total_time=10.0, output_interval=output_interval, scheme="von_neumann")
 
-    # visualize_cell_parameter(ds, zlabel='Water Depth', interval=500)
-    visualize_water_depth_3d(ds,interval=1000)
+    visualize_cell_parameter(ds, zlabel='water depth', interval=100)
+    # visualize_water_depth_3d(ds,interval=1000)
