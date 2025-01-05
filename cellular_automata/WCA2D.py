@@ -3,7 +3,9 @@ import numpy as np
 from visualise import *
 
 class WCA2D:
-    def __init__(self, grid_shape, z, d, dx, depth_tolerance, n):
+    def __init__(
+            self, grid_shape, z, d, dx, depth_tolerance, n, wall_bc, inflow_bc, outflow_bc
+        ):
         self.grid_shape = grid_shape
         self.z = z
         self.d = d
@@ -12,6 +14,10 @@ class WCA2D:
         self.depth_tolerance = depth_tolerance
         self.n = n
         self.I_total = np.zeros_like(self.d)
+
+        self.wall_bc = wall_bc
+        self.inflow_bc = inflow_bc
+        self.outflow_bc = outflow_bc
     
     def get_neighbours(self, row, col, scheme):
         """
@@ -40,7 +46,8 @@ class WCA2D:
         for direction_idx, (dr, dc) in enumerate(directions):
             r, c = row + dr, col + dc
             if 0 <= r < self.grid_shape[0] and 0 <= c < self.grid_shape[1]:
-                neighbors.append((dr, dc, direction_idx))
+                if not self.wall_bc[r, c]:
+                    neighbors.append((dr, dc, direction_idx))
         
         return neighbors
     
@@ -57,6 +64,10 @@ class WCA2D:
 
         for row in range(self.grid_shape[0]):
             for col in range(self.grid_shape[1]):
+
+                if self.wall_bc[row, col]:
+                    continue
+
                 # Get central cell properties
                 l0 = self.l[row, col]
                 d0 = self.d[row, col]
@@ -66,7 +77,6 @@ class WCA2D:
                 downstream_neighbors = [
                     (dr, dc, direction_idx) for dr, dc, direction_idx in neighbors if self.l[row, col] - self.l[row+dr, col+dc] > self.depth_tolerance
                 ]
-
 
                 # If no downstream neighbors, move to the next cell
                 if len(downstream_neighbors) == 0:
@@ -268,7 +278,7 @@ class WCA2D:
 
                 vel = self.compute_intercellular_velocity(I_ij)
                 self.dt = self.update_timestep(max_dt, scheme=scheme)
-                print(self.dt)
+                # print(self.dt)
                 
                 update_time += output_interval
 
@@ -288,6 +298,10 @@ if __name__ == "__main__":
     d = np.full(grid_shape, 0.0)
     d[0, 0] = 1.0
 
+    wall_bc = np.zeros(grid_shape)
+    inflow_bc = np.zeros(grid_shape)
+    outflow_bc = np.zeros(grid_shape)
+
     depth_tolerance = 0.01
     n = 0.03
 
@@ -296,9 +310,11 @@ if __name__ == "__main__":
     max_dt = 0.1
     output_interval = 0.5
 
-    wca = WCA2D(grid_shape, z, d, dx=1.0, depth_tolerance=depth_tolerance, n=n)
+    wca = WCA2D(
+        grid_shape, z, d, dx=1.0, depth_tolerance=depth_tolerance, n=n,
+        wall_bc = wall_bc, inflow_bc=inflow_bc, outflow_bc=outflow_bc
+    )
     ds = wca.run_simulation(dt, max_dt, total_time=10.0, output_interval=output_interval, scheme="moore")
 
     # visualize_cell_parameter(ds, zlabel='Water Depth', interval=500)
     visualize_water_depth_3d(ds,interval=1000)
-    
