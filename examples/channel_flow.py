@@ -1,82 +1,41 @@
+import numpy as np
+
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from cellular_automata.swfca import SWFCA_Model
+from cellular_automata.WCA2D import WCA2D
 from cellular_automata.visualise import *
 
-import numpy as np
-
-
-grid_shape = (1,10)
-dx = 1.0
-CFL = 0.5
-manning_n = np.full(grid_shape, 0.001)
-depth_threshold = 0.01
-bh_tolerance = 0.01
-
-num_steps = 4
-
-d = np.full(grid_shape,0.1)
-# d[:,3:7] = 0.1
-d[0,0] = 0.3
-
+grid_shape = (2, 5)
+    
 z = np.zeros(grid_shape)
 
-u = np.zeros(grid_shape)
-v = np.zeros(grid_shape)
-# v[:,3:7] = 0.1
-# v[0,:] = 0.1
+d = np.full(grid_shape, 1.0)
 
-closed_boundaries = np.zeros(grid_shape, dtype=bool)
-# closed_boundaries = np.array([
-#     [0,0,1,0,0,0,0,1,0,0],
-#     [0,0,1,0,0,0,0,1,0,0],
-#     [0,0,1,0,0,0,0,1,0,0],
-#     [0,0,1,0,0,0,0,1,0,0],
-#     [0,0,1,0,0,0,0,1,0,0],
-#     [0,0,1,0,0,0,0,1,0,0],
-#     [0,0,1,0,0,0,0,1,0,0],
-#     [0,0,1,0,0,0,0,1,0,0],
-#     [0,0,1,0,0,0,0,1,0,0],
-#     [0,0,1,0,0,0,0,1,0,0]
-# ])
+wall_bc = np.zeros(grid_shape)
+vfr_in_bc = np.zeros(grid_shape)
+vfr_in_bc[:,0] = 1
+vfr_out_bc = np.zeros(grid_shape)
+open_out_bc = np.zeros(grid_shape)
+open_out_bc[:,-1] = True
+porous_bc = np.zeros(grid_shape)
 
-inlet_bc = np.zeros(grid_shape + (2,))
-# inlet_bc[0,0] = (0.1, 3)
+depth_tolerance = 0.01
+n = 0.1
 
-pressure_outlet_bc = np.zeros(grid_shape)
-pressure_outlet_bc[0,-1] = True
+total_time = 10.0
+dt = 0.1
+max_dt = 0.5
+output_interval = 0.1
 
-# flux_outlet_bc = np.zeros(grid_shape)
-# flux_outlet_bc[-1,0] = 0.3
-
-model = SWFCA_Model(
-    grid_shape, d, u, v, z, dx, CFL, manning_n,
-    closed_bc=closed_boundaries, inlet_bc=inlet_bc,
-    pressure_outlet_bc=pressure_outlet_bc,
-    # flux_outlet_bc=flux_outlet_bc,
-    depth_threshold=depth_threshold, bh_tolerance=bh_tolerance
+wca = WCA2D(
+    grid_shape, z, d, dx=1.0, depth_tolerance=depth_tolerance, n=n,
+    wall_bc = wall_bc, vfr_in_bc=vfr_in_bc, vfr_out_bc=vfr_out_bc,
+    open_out_bc=open_out_bc, porous_bc=porous_bc
 )
-ds, us, vs, dt, bhs = model.run_simulation(num_steps=num_steps)
+ds, vs = wca.run_simulation(
+    dt, max_dt, total_time=10.0, output_interval=output_interval, scheme="von_neumann"
+)
 
-avg_water_depths = [np.mean(depth) for depth in ds]
-std_bh = [np.std(h) for h in bhs]
-print(std_bh[-1])
-
-# plot_iteration_dependent_variable([dt, std_bh], ["dt (s)", "Hydrodynamic head std"])
-
-
-visualize_cell_parameter(bhs, interval=1000)
-visualize_cell_parameter(ds, interval=1000)
-visualize_cell_parameter(us, interval=1000,split=True)
-# visualize_water_depth_3d(ds, interval=100)
-
-v_avg = -np.mean([v[-20:,0] for v in vs],axis=0)
-d_avg = np.mean([d[-20:,0] for d in ds], axis=0)
-# print(v_avg)
-import matplotlib.pyplot as plt
-plt.plot(v_avg, label="v_avg")
-plt.plot(d_avg, label="d_avg")
-plt.legend()
-# plt.show()
+visualize_cell_parameter(ds, zlabel='water depth', interval=100)
