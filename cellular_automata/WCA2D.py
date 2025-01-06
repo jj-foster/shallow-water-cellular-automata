@@ -1,11 +1,9 @@
 import numpy as np
 
-from visualise import *
-
 class WCA2D:
     def __init__(
             self, grid_shape, z, d, dx, depth_tolerance, n,
-            wall_bc, vfr_in_bc, vfr_out_bc, open_out_bc
+            wall_bc, vfr_in_bc, vfr_out_bc, open_out_bc, porous_bc
         ):
         """_summary_
 
@@ -19,7 +17,8 @@ class WCA2D:
             wall_bc (np.ndarray): Zero-flux boundary condition. Shape like grid_shape. True/False per cell
             vfr_in_bc (np.ndarray): Volumetric flow rate inflow boundary condition. Shape like grid_shape. dV/dt (m3/s)
             vfr_out_bc (np.ndarray): Volumetric flow rate outflow boundary condition. Shape like grid_shape. dV/dt (m3/s)
-            open_out_bc (np.ndarraY): Open outlet boundary condition. Shape like grid_shape. True/False per cell
+            open_out_bc (np.ndarray): Open outlet boundary condition. Shape like grid_shape. True/False per cell.
+            porous_bc (np.ndarray): Limits intercellular volume output from cell. Shape like grid_shape. 0 to 1 proportion of flow blocked. 1 = no flow through cell 
         """
         self.grid_shape = grid_shape
         self.z = z
@@ -34,6 +33,7 @@ class WCA2D:
         self.vfr_in_bc = vfr_in_bc
         self.vfr_out_bc = vfr_out_bc
         self.open_out_bc = open_out_bc
+        self.porous_bc = porous_bc
     
     def get_neighbours(self, row, col, scheme):
         """
@@ -108,6 +108,10 @@ class WCA2D:
                         dV_0i[i] = (self.dx**2 / np.sqrt(2)) * max(dl, 0) # Diagonal cell (Moore's neighbourhood)
                     else:
                         dV_0i[i] = self.dx**2 * max(dl, 0)
+
+                    # if self.porous_bc[r, c]:
+                    #     dV_0i = dV_0i * (1 - self.porous_bc[r, c])
+                    
                     dV_total += dV_0i[i]
 
                 dV_min = np.min(dV_0i)
@@ -154,8 +158,10 @@ class WCA2D:
                     dV_min + self.I_total[row, col]
                 )
 
+                if self.porous_bc[row, col] > 0:
+                    new_I_total = new_I_total * (1 - self.porous_bc[row, col])
+
                 # Distribute intercellular volume to neighbors
-                # I_i = np.zeros(len(downstream_neighbors), dtype=np.float64)
                 for i, (dr, dc, direction_idx) in enumerate(downstream_neighbors):
                     r, c = row + dr, col + dc
 
@@ -167,9 +173,7 @@ class WCA2D:
 
                 # Update water depth for the next time step
                 I_i_total = sum(I_ij[row, col, :])
-                new_d[row, col] = new_d[row, col] - I_i_total / A0 #\
-                    # + (self.vfr_in_bc[row, col] * self.dt) / A0 \
-                    # - (self.vfr_out_bc[row, col] * self.dt) / A0
+                new_d[row, col] = new_d[row, col] - I_i_total / A0
                 
                 if new_d[row, col] < 0:
                     new_d[row, col] = 0
@@ -198,6 +202,10 @@ class WCA2D:
                 if self.wall_bc[row, col]:
                     new_new_d[row, col] = 0
 
+                # Clamp at 0
+                if new_new_d[row, col] < 0:
+                    new_new_d[row, col] = 0
+
 
         return new_new_d
 
@@ -214,24 +222,25 @@ class WCA2D:
 
                 u, v = 0, 0 # components of velocity vector
 
-                for dr, dc, direction_idx in neighbours:
-                    r, c = row + dr, col + dc
+                if self.d[row, col] > self.depth_tolerance:
+                    for dr, dc, direction_idx in neighbours:
+                        r, c = row + dr, col + dc
 
-                    # Average depth
-                    d_avg = 0.5 * (self.d[row, col] + self.d[r, c])
+                        # Average depth
+                        d_avg = 0.5 * (self.d[row, col] + self.d[r, c])
 
-                    # Length of the neighbour cell edge
-                    if abs(r - row) == abs(c - col):
-                        de = self.dx * np.sqrt(2) # diagonal cell (Moore's neighbourhood)
-                    else:
-                        de = self.dx
+                        # Length of the neighbour cell edge
+                        if abs(r - row) == abs(c - col):
+                            de = self.dx * np.sqrt(2) # diagonal cell (Moore's neighbourhood)
+                        else:
+                            de = self.dx
 
-                    # Compute intercellular velocities
-                    v_i = I_ij[row, col, direction_idx] / (d_avg * de * self.dt)
+                        # Compute intercellular velocities
+                        v_i = I_ij[row, col, direction_idx] / (d_avg * de * self.dt)
 
-                    # Add velocity contribution to components
-                    u += v_i * dc
-                    v += v_i * dr
+                        # Add velocity contribution to components
+                        u += v_i * dc
+                        v += v_i * dr
 
                 vel[row, col, 0] = u
                 vel[row, col, 1] = v
@@ -338,40 +347,3 @@ class WCA2D:
                 update_time += output_interval
 
         return ds, vs
-
-if __name__ == "__main__":
-    grid_shape = (5, 5)
-    
-    z = np.zeros(grid_shape)
-    # z = np.array([
-    #     [2, 2, 2, 2, 2],
-    #     [2, 1, 1, 1, 2],
-    #     [2, 1, 0, 1, 2],
-    #     [2, 1, 1, 1, 2],
-    #     [2, 2, 2, 2, 2]])
-
-    d = np.full(grid_shape, 0.0)
-    d[0, 0] = 1.0
-
-    wall_bc = np.zeros(grid_shape)
-    vfr_in_bc = np.zeros(grid_shape)
-    vfr_out_bc = np.zeros(grid_shape)
-    open_out_bc = np.zeros(grid_shape)
-    # open_out_bc[1,1] = True
-
-    depth_tolerance = 0.01
-    n = 0.1
-
-    total_time = 10.0
-    dt = 0.1
-    max_dt = 0.1
-    output_interval = 0.1
-
-    wca = WCA2D(
-        grid_shape, z, d, dx=1.0, depth_tolerance=depth_tolerance, n=n,
-        wall_bc = wall_bc, vfr_in_bc=vfr_in_bc, vfr_out_bc=vfr_out_bc, open_out_bc=open_out_bc
-    )
-    ds, vs = wca.run_simulation(dt, max_dt, total_time=10.0, output_interval=output_interval, scheme="von_neumann")
-
-    visualize_cell_parameter(ds, zlabel='water depth', interval=100)
-    # visualize_water_depth_3d(ds,interval=1000)

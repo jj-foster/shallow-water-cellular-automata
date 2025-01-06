@@ -1,7 +1,6 @@
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-# matplotlib.use('TkAgg')
 
 import numpy as np
 
