@@ -34,8 +34,13 @@ wca = WCA2D(
     wall_bc = wall_bc, vfr_in_bc=vfr_in_bc, vfr_out_bc=vfr_out_bc,
     open_out_bc=open_out_bc, porous_bc=porous_bc
 )
-ds, vs = wca.run_simulation(
+wca.run_simulation(
     dt, max_dt, total_time=10.0, output_interval=output_interval, scheme="von_neumann"
 )
 
+log = wca.log
+ds = log.d
+speed = log.speed()
+
 visualize_cell_parameter(ds, zlabel='water depth', interval=100)
+visualize_cell_parameter(speed, zlabel='speed', interval=100)

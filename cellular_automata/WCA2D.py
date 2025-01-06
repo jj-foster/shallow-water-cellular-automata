@@ -1,4 +1,5 @@
 import numpy as np
+from cellular_automata.log import Log
 
 class WCA2D:
     def __init__(
@@ -34,6 +35,8 @@ class WCA2D:
         self.vfr_out_bc = vfr_out_bc
         self.open_out_bc = open_out_bc
         self.porous_bc = porous_bc
+
+        self.log = Log()
     
     def get_neighbours(self, row, col, scheme):
         """
@@ -322,8 +325,10 @@ class WCA2D:
         time = 0
         update_time = output_interval
 
-        ds = [self.d]
-        vs = []
+        self.log.time = [time]
+        self.log.d = [self.d]
+        self.log.dt = [self.dt]
+        self.log.vel = [np.zeros((self.grid_shape[0],self.grid_shape[1],2))]
 
         while time < total_time:
             new_d, new_I_total, I_ij = self.compute_intercellular_volume(scheme=scheme)
@@ -334,16 +339,19 @@ class WCA2D:
             self.l = self.z + self.d
             self.I_total = new_I_total
 
-            ds.append(self.d.copy())
+            self.log.d.append(self.d)
+            self.log.dt.append(self.dt)
 
             time += self.dt
+            self.log.time = time
+
             if time >= update_time:
 
                 vel = self.compute_intercellular_velocity(I_ij)
-                vs.append(vel)
+                self.log.vel.append(vel)
                 self.dt = self.update_timestep(max_dt, scheme=scheme)
                 # print(self.dt)
                 
                 update_time += output_interval
 
-        return ds, vs
+        return None
