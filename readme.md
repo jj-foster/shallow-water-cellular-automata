@@ -7,6 +7,7 @@ Boundary conditions supported:
 - Volumetric flow rate outlet (m3/s)
 - Static pressure outlet (open_out_bc)
 - Porous - blocks the specified proportion of flow
+- Wall
 
 ![alt text](https://github.com/jj-foster/shallow-water-cellular-automata/blob/main/river.gif)
 
