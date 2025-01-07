@@ -1,6 +1,7 @@
 /.pytest_cache
 /.venv
 /.vscode
+/.vscode
 /test.py
 cellular_automata/__pycache__
 test/__pycache__
