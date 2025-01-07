@@ -22,19 +22,19 @@ class WCA2D:
             porous_bc (np.ndarray): Limits intercellular volume output from cell. Shape like grid_shape. 0 to 1 proportion of flow blocked. 1 = no flow through cell 
         """
         self.grid_shape = grid_shape
-        self.z = z
-        self.d = d
+        self.z = z.astype(float)
+        self.d = d.astype(float)
         self.l = z + d
         self.dx = dx
         self.depth_tolerance = depth_tolerance
         self.n = n
         self.I_total = np.zeros_like(self.d)
 
-        self.wall_bc = wall_bc
-        self.vfr_in_bc = vfr_in_bc
-        self.vfr_out_bc = vfr_out_bc
-        self.open_out_bc = open_out_bc
-        self.porous_bc = porous_bc
+        self.wall_bc = wall_bc.astype(float)
+        self.vfr_in_bc = vfr_in_bc.astype(float)
+        self.vfr_out_bc = vfr_out_bc.astype(float)
+        self.open_out_bc = open_out_bc.astype(float)
+        self.porous_bc = porous_bc.astype(float)
 
         self.log = Log()
     
