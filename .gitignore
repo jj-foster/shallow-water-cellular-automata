@@ -1,7 +1,8 @@
 /.pytest_cache
 /.venv
+.vscode
 /test.py
 cellular_automata/__pycache__
 test/__pycache__
 /archive
-# *.mp4
+A weighted cellular automata 2D inundation model for rapid flood analysis - M. Guidolin et. al. (2016).pdf
