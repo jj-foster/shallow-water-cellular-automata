@@ -193,7 +193,8 @@ class WCA2D:
                 
                 # Open outlet
                 if self.open_out_bc[row, col]:
-                    new_new_d[row, col] = self.d[row, col]
+                    if new_new_d[row, col] > self.d[row, col]:
+                        new_new_d[row, col] = self.d[row, col]
 
                 # Volumetric flow rate inflow
                 new_new_d[row, col] += self.vfr_in_bc[row, col] * self.dt / A
@@ -288,7 +289,7 @@ class WCA2D:
         Returns:
             float: Updated time step (dt).
         """
-        min_dt = float(max_dt)  # Initialize minimum time step
+        dt = float(max_dt)  # Initialize minimum time step
         n = self.n  # Manning's roughness coefficient
         dx = self.dx  # Grid cell size (assumed square)
 
@@ -304,13 +305,13 @@ class WCA2D:
 
                 if S > slope_tolerance:  # Only consider slopes above the tolerance
                     # Compute time step for this cell
-                    dt_cell = (dx**2 / 4) * ((2 * n / R**(5/3)) * S**0.5)
-                    min_dt = min(min_dt, dt_cell)  # Update minimum time step
+                    dt_cell = (dx**2 / 4) * ((2 *n* S**0.5) / R**(5/3))
+                    dt = min(dt, dt_cell)  # Update minimum time step
                 else:
                     # print(S, slope_tolerance)
                     pass
         
-        return min_dt
+        return dt
 
 
     def run_simulation(self, dt, max_dt, total_time, output_interval, scheme="von_neumann"):
@@ -326,6 +327,7 @@ class WCA2D:
         update_time = output_interval
 
         self.log.time = [time]
+        self.log.update_time = [time]
         self.log.d = [self.d]
         self.log.dt = [self.dt]
         self.log.vel = [np.zeros((self.grid_shape[0],self.grid_shape[1],2))]
@@ -353,5 +355,6 @@ class WCA2D:
                 # print(self.dt)
                 
                 update_time += output_interval
+                self.log.update_time = time
 
         return None

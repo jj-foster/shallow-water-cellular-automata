@@ -3,12 +3,12 @@ import numpy as np
 class Log:
     def __init__(self):
         self.time = []
+        self.update_time = []
         self.dt = []
         self.d = []
         self.vel = []
 
     def speed(self):
-
         return [np.sqrt(v[:,:,0]**2 + v[:,:,1]**2) for v in self.vel]
     
     def u(self, scale=1):
@@ -40,3 +40,4 @@ class Log:
             avg_vars.append(avg_var)
         
         return avg_vars 
+
