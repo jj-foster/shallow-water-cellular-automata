@@ -78,9 +78,8 @@ dt = log.dt
 window_size = 15
 speed_avg = log.mv_avg(log.speed(),window_size)
 
-# plot_iteration_dependent_variable([dt],ylabels=["dt"])
-# visualize_cell_parameter(ds, zlabel='water depth', interval=100)
-# visualize_cell_parameter(speed_avg, zlabel='speed', interval=100)
+plot_iteration_dependent_variable([dt],ylabels=["dt"])
+visualize_cell_parameter(ds, zlabel='water depth', interval=100)
 visualize_cell_parameter_with_vector(
     speed_avg,log.mv_avg(log.u(),window_size),log.mv_avg(log.v(-1),window_size),
     zlabel="speed", interval=100, scale=0.03)
