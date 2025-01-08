@@ -11,4 +11,4 @@ Boundary conditions supported:
 
 ![alt text](https://github.com/jj-foster/shallow-water-cellular-automata/blob/main/river.gif)
 
-Guidolin, Michele, Albert S. Chen, Bidur Ghimire, Edward C. Keedwell, Slobodan Djordjević, and Dragan A. Savić. 2016. “A Weighted Cellular Automata 2D Inundation Model for Rapid Flood Analysis.” Environmental Modelling & Software 84: 378–394. https://doi.org/10.1016/j.envsoft.2016.07.001.
+Guidolin, Michele, Albert S. Chen, Bidur Ghimire, Edward C. Keedwell, Slobodan Djordjević, and Dragan A. Savić. 2016. “A Weighted Cellular Automata 2D Inundation Model for Rapid Flood Analysis.” Environmental Modelling & Software 84: 378–394. https://doi.org/10.1016/j.envsoft.2016.07.008.
