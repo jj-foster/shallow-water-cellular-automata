@@ -170,7 +170,7 @@ class WCA2D:
 
                     I_i = w_i[i] * new_I_total[row, col]
                     I_ij[row, col, direction_idx] = I_i
-                    new_d[r,c] += I_i / A0 # update neighbours water depth
+                    # new_d[r,c] += I_i / A0 # update neighbours water depth
                     if new_d[r,c] < 0:
                         new_d[r,c] = 0
 
@@ -329,6 +329,7 @@ class WCA2D:
         self.log.time = [time]
         self.log.update_time = [time]
         self.log.d = [self.d]
+        self.log.l = [self.l]
         self.log.dt = [self.dt]
         self.log.vel = [np.zeros((self.grid_shape[0],self.grid_shape[1],2))]
 
@@ -343,6 +344,7 @@ class WCA2D:
 
             self.log.d.append(self.d)
             self.log.dt.append(self.dt)
+            self.log.l.append(self.l)
 
             time += self.dt
             self.log.time = time

@@ -6,6 +6,7 @@ class Log:
         self.update_time = []
         self.dt = []
         self.d = []
+        self.l = []
         self.vel = []
 
     def speed(self):

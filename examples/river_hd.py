@@ -59,7 +59,8 @@ vfr_in_bc = np.zeros(grid_shape)
 vfr_in_bc[0,:] = -depth[0,:] * 5
 
 vfr_out_bc = np.zeros(grid_shape)
-vfr_out_bc[-1,:] = vfr_in_bc[0,:]
+# vfr_out_bc[-1,:] = vfr_in_bc[0,:]
+vfr_out_bc[-1,:] = 50
 
 open_out_bc = np.zeros(grid_shape)
 porous_bc = np.zeros(grid_shape)
@@ -87,16 +88,15 @@ dt = log.dt
 
 print(len(dt))
 
-window_size = 10
+window_size = 5
 speed_avg = log.mv_avg(log.speed(),window_size)
 d_avg = log.mv_avg(log.d, window_size)
+l_avg = log.mv_avg(log.l, window_size)
 u_avg = log.mv_avg(log.u(), window_size)
 v_avg = log.mv_avg(log.v(-1), window_size)
 
 plot_iteration_dependent_variable([dt],ylabels=["dt"])
-visualize_cell_parameter(d_avg, zlabel='water depth', interval=10)
+visualize_cell_parameter(d_avg, zlabel='water depth', interval=1)
 visualize_cell_parameter_with_vector(speed_avg, u_avg, v_avg,
     zlabel="speed", interval=100, scale=0.03
 )
-
-
