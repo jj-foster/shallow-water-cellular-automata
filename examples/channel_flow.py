@@ -12,6 +12,7 @@ grid_shape = (2, 5)
 z = np.zeros(grid_shape)
 
 d = np.full(grid_shape, 1.0)
+d[0,0] = 2.0
 
 wall_bc = np.zeros(grid_shape)
 vfr_in_bc = np.zeros(grid_shape)
@@ -39,7 +40,7 @@ wca.run_simulation(
 )
 
 log = wca.log
-ds = log.d
+ds = log.to_2D(log.d, grid_shape[0], grid_shape[1])
 speed = log.speed()
 
 visualize_cell_parameter(ds, zlabel='water depth', interval=100)
