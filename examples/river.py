@@ -54,12 +54,12 @@ open_out_bc[-1,3:7] = True
 porous_bc = np.zeros(grid_shape)
 
 depth_tolerance = 0.01
-n = 0.1
+n = 0.01
 
-total_time = 5.0
+total_time = 100.0
 dt = 0.1
-max_dt = 1
-output_interval = 0.1
+max_dt = 0.2
+output_interval = 0.5
 
 wca = WCA2D(
     grid_shape, z, d, dx=1.0, depth_tolerance=depth_tolerance, n=n,
@@ -71,7 +71,7 @@ wca.run_simulation(
 )
 
 log = wca.log
-ds = log.d
+ds = log.to_2D(log.d, grid_shape[0], grid_shape[1])
 speed = log.speed()
 dt = log.dt
 
@@ -80,6 +80,6 @@ speed_avg = log.mv_avg(log.speed(),window_size)
 
 plot_iteration_dependent_variable([dt],ylabels=["dt"])
 visualize_cell_parameter(ds, zlabel='water depth', interval=100)
-visualize_cell_parameter_with_vector(
-    speed_avg,log.mv_avg(log.u(),window_size),log.mv_avg(log.v(-1),window_size),
-    zlabel="speed", interval=100, scale=0.03)
+# visualize_cell_parameter_with_vector(
+#     speed_avg,log.mv_avg(log.u(),window_size),log.mv_avg(log.v(-1),window_size),
+#     zlabel="speed", interval=100, scale=0.03)

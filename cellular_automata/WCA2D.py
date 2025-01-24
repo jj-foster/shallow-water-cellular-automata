@@ -29,7 +29,6 @@ class WCA2D:
         self.A0 = self.dx**2
         self.depth_tolerance = depth_tolerance
         self.n = n
-        self.I_total = np.zeros_like(self.d)
 
         self.wall_bc = self.flatten(wall_bc.astype(float))
         self.vfr_in_bc = self.flatten(vfr_in_bc.astype(float))
@@ -38,15 +37,15 @@ class WCA2D:
         self.porous_bc = self.flatten(porous_bc.astype(float))
 
         self.neighbours = None
+        self.outflux1 = None # outflux for current timestep
+        self.outflux2 = None # outflux for previous timestep
         self.scheme = None
 
         self.log = Log()
         self.log.grid_shape = grid_shape
 
-        self.MOORE_DIRECTIONS = [(-1, -1), (-1, 0), (-1, 1),
-                        (0, -1),         (0, 1),
-                        (1, -1), (1, 0), (1, 1)]
-        self.VON_NEUMANN_DIRECTIONS = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+        self.MOORE_DIRECTIONS = [(-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1)]
+        self.VON_NEUMANN_DIRECTIONS = [(-1, 0), (0, 1), (1, 0), (0, -1)]
 
     def flatten(self, array):
         return array.flatten()
@@ -77,14 +76,14 @@ class WCA2D:
         for row in range(self.grid_shape[0]):
             for col in range(self.grid_shape[1]):
                 x = []
-                for direction_idx, (dr, dc) in enumerate(directions):
+                for (dr, dc) in directions:
                     r, c = row + dr, col + dc
 
-                    y = (-1, direction_idx)
+                    y = -1
                     if 0 <= r < self.grid_shape[0] and 0 <= c < self.grid_shape[1]:
                         j = r * self.grid_shape[1] + c
                         if not self.wall_bc[i]:
-                            y = (j, direction_idx)
+                            y = j
 
                     x.append(y)
 
@@ -93,189 +92,183 @@ class WCA2D:
         
         return neighbors
     
+    def compute_outflow(self, i, ratio_dt):
+        
+        if self.wall_bc[i]:
+            self.outflux1[i,:] = 0
+            return None
 
-    def compute_intercellular_volume(self, scheme):
+        # Get central cell properties
+        l0 = self.l[i]
+        d0 = self.d[i]
+
+        # Identify downstream neighbors
+        no_skip = 0
+        downstream_neighbors = np.zeros_like(self.neighbours[i])
+        for j, ni in enumerate(self.neighbours[i]):
+            if ni != -1 and self.l[i] - self.l[ni] > self.depth_tolerance:
+                downstream_neighbors[j] = 1
+                no_skip = 1
+        
+        # If no downstream neighbors, move to the next cell
+        if no_skip == 0:
+            self.outflux1[i,:] = 0
+            return None
+
+        # Compute available storage volumes
+        dV_0j = np.zeros(len(downstream_neighbors), dtype=np.float64)
+        dV_total = 0
+        dV_min = 1000000
+        I_total = 0 # total flux out of central cell from last timestep
+        for j,ni in enumerate(self.neighbours[i]):
+            if downstream_neighbors[j] == 0:
+                continue
+
+            dl = l0 - self.l[ni]
+            if self.scheme == "moore":
+                dV_0j[j] = (self.dx**2 / np.sqrt(2)) * max(dl, 0) # Diagonal cell (Moore's neighbourhood)
+            else:
+                dV_0j[j] = self.dx**2 * max(dl, 0)
+
+            # if dV_0j[j] > 0:
+            I_total += self.outflux2[i, j] / ratio_dt
+
+            dV_total += dV_0j[j]
+            dV_min = min(dV_min, dV_0j[j])
+
+        # Compute weights for downstream neighbours and central cell
+        w_j = np.zeros(len(downstream_neighbors), dtype=np.float64)
+        for j,ni in enumerate(self.neighbours[i]):
+            if downstream_neighbors[j] == 0:
+                continue
+
+            w_j[j] = dV_0j[j] / (dV_total + dV_min)
+
+        
+        # Compute total intercellular volume
+        max_weight_idx = np.argmax(w_j)
+        ni_m = self.neighbours[i][max_weight_idx]
+
+        # maximum possible intercellular velocity (v_M)
+        dl0_M = l0 - self.l[ni_m] # water level of cell with largest weight
+
+        # distance between the centre of the central cell and the centre of cell with the largest weight
+        if self.scheme=="moore":
+            dx0_M = self.dx * np.sqrt(2) # diagonal cell (Moore's neighbourhood)
+        else:
+            dx0_M = self.dx
+
+        v_critical = np.sqrt(d0 * 9.81)  # Critical velocity
+        v_manning = (1 / self.n) * (d0**(2 / 3)) * np.sqrt(dl0_M / dx0_M)  # Manning velocity
+        v_M = min(v_critical, v_manning)
+
+        # max possible intercellular volume (I_M)
+        # Length of the cell edge with largest weight
+        if self.scheme == "moore":
+            de_M = self.dx * np.sqrt(2) # diagonal cell (Moore's neighbourhood)
+        else:
+            de_M = self.dx
+        I_M = v_M * d0 * self.dt * de_M
+
+        # Compute total intercellular volume (I_total)
+        w_M = w_j[max_weight_idx]
+        new_I_total = min(
+            d0 * self.A0,
+            I_M / w_M,
+            dV_min + I_total
+        )
+
+        if self.porous_bc[i] > 0:
+            new_I_total = new_I_total * (1 - self.porous_bc[i])
+
+        # Calculate outflux for each downstream neighbour considering weights
+        for j,ni in enumerate(self.neighbours[i]):
+            if downstream_neighbors[j] == 0:
+                continue
+
+            I_ni = w_j[j] * new_I_total
+            self.outflux1[i, j] = I_ni
+
+        return None
+
+
+    def compute_water_depth(self, i):
         """
         Compute intercellular volumes for all cells in the grid.
         Updates water depth for the next time step.
         """
-        new_d = np.copy(self.d)  # To store updated water depths
-        new_I_total = np.zeros_like(self.I_total)  # To store updated total intercellular volumes
 
-        max_neighbours = 8 if scheme == "moore" else 4
-        I_ij = np.zeros((self.grid_shape[0] * self.grid_shape[1], max_neighbours), dtype=np.float64)
+        d = self.d[i].copy()
 
-        for i in range(self.l.size):
+        # loop through edges of the cell
+        flux = 0
+        for j, ni in enumerate(self.neighbours[i]):
+            # flux leaving cell
+            flux -= self.outflux1[i, j]
 
-            if self.wall_bc[i]:
-                continue
-
-            # Get central cell properties
-            l0 = self.l[i]
-            d0 = self.d[i]
-
-            # Identify downstream neighbors
-            downstream_neighbors = [
-                (j, direction_idx) for j, direction_idx in self.neighbours[i] \
-                    if self.l[i] - self.l[j] > self.depth_tolerance and j != -1
-            ]
-            
-            # If no downstream neighbors, move to the next cell
-            if len(downstream_neighbors) == 0:
-                continue
-
-            # Compute available storage volumes
-            dV_0j = np.zeros(len(downstream_neighbors), dtype=np.float64)
-            dV_total = 0
-            for k,(j,_) in enumerate(downstream_neighbors):
-                dl = l0 - self.l[j]
-                if scheme == "moore":
-                    dV_0j[k] = (self.dx**2 / np.sqrt(2)) * max(dl, 0) # Diagonal cell (Moore's neighbourhood)
-                else:
-                    dV_0j[k] = self.dx**2 * max(dl, 0)
-
-                # if self.porous_bc[r, c]:
-                #     dV_0i = dV_0i * (1 - self.porous_bc[r, c])
-                
-                dV_total += dV_0j[k]
-
-            dV_min = np.min(dV_0j)
-            dV_max = np.max(dV_0j)
-
-            # Compute weights for downstream neighbours and central cell
-            w_j = np.zeros(len(downstream_neighbors), dtype=np.float64)
-            for j in range(len(downstream_neighbors)):
-                w_j[j] = dV_0j[j] / (dV_total + dV_min)
-            w_0 = dV_min / (dV_total + dV_min)
-
-            # Compute total intercellular volume
-            max_weight_idx = np.argmax(w_j)
-            j_m, _ = downstream_neighbors[max_weight_idx]
-
-            # maximum possible intercellular velocity (v_M)
-            dl0_M = l0 - self.l[j_m] # water level of cell with largest weight
-
-            # distance between the centre of the central cell and the centre of cell with the largest weight
-            if scheme=="moore":
-                dx0_M = self.dx * np.sqrt(2) # diagonal cell (Moore's neighbourhood)
+            # flux entering cell
+            if self.scheme == "moore":
+                flux += self.outflux1[ni, (j+4)%8]
             else:
-                dx0_M = self.dx
-
-            v_critical = np.sqrt(d0 * 9.81)  # Critical velocity
-            v_manning = (1 / self.n) * (d0**(2 / 3)) * np.sqrt(dl0_M / dx0_M)  # Manning velocity
-            v_M = min(v_critical, v_manning)
-
-            # max possible intercellular volume (I_M)
-            # Length of the cell edge with largest weight
-            if scheme == "moore":
-                de_M = self.dx * np.sqrt(2) # diagonal cell (Moore's neighbourhood)
-            else:
-                de_M = self.dx
-            I_M = v_M * d0 * self.dt * de_M
-
-            # Compute total intercellular volume (I_total)
-            w_M = w_j[max_weight_idx]
-            new_I_total[i] = min(
-                d0 * self.A0,
-                I_M / w_M,
-                dV_min + self.I_total[i]
-            )
-
-            if self.porous_bc[i] > 0:
-                new_I_total = new_I_total * (1 - self.porous_bc[i])
-
-            # Distribute intercellular volume to neighbors
-            for k, (j, direction_idx) in enumerate(downstream_neighbors):
-
-                I_i = w_j[k] * new_I_total[i]
-                I_ij[i, direction_idx] = I_i
-                new_d[j] += I_i / self.A0 # update neighbours water depth
-                if new_d[j] < 0:
-                    new_d[j] = 0
-
-            # Update water depth for the next time step
-            I_i_total = sum(I_ij[i, :])
-            new_d[i] = new_d[i] - I_i_total / self.A0
+                flux += self.outflux1[ni, (j+2)%4]
             
-            if new_d[i] < 0:
-                new_d[i] = 0
 
-            # i = i + 1
+        # Update water depth
+        d += flux / self.A0
 
-        return new_d, new_I_total, I_ij
+        ### BOUNDARY CONDITIONS ###
 
-    def apply_boundary_conditions(self, new_d):
-        new_new_d = np.copy(new_d)
+        # Open outlet
+        if self.open_out_bc[i]:
+            if d > self.d[i]:
+                d = self.d[i]
 
-        A = self.A0
+        # Volumetric flow rate inflow
+        d += self.vfr_in_bc[i] * self.dt / self.A0
 
-        for row in range(self.grid_shape[0]):
-            for col in range(self.grid_shape[1]):
-                
-                # Open outlet
-                if self.open_out_bc[row, col]:
-                    if new_new_d[row, col] > self.d[row, col]:
-                        new_new_d[row, col] = self.d[row, col]
+        # Volumetric flow rate outflow
+        d -= self.vfr_out_bc[i] * self.dt / self.A0
 
-                # Volumetric flow rate inflow
-                new_new_d[row, col] += self.vfr_in_bc[row, col] * self.dt / A
+        # Wall
+        if self.wall_bc[i]:
+            d = 0
+        
+        if d < 0:
+            d = 0
 
-                # Volumetric flow rate outflow
-                new_new_d[row, col] -= self.vfr_out_bc[row, col] * self.dt / A
+        self.d[i] = d
 
-                # Wall
-                if self.wall_bc[row, col]:
-                    new_new_d[row, col] = 0
-
-                # Clamp at 0
-                if new_new_d[row, col] < 0:
-                    new_new_d[row, col] = 0
+        return None
 
 
-        return new_new_d
-
-
-    def compute_intercellular_velocity(self, I_ij, scheme):
+    def compute_intercellular_velocity(self):
         vel = np.zeros(self.grid_shape[0] * self.grid_shape[1])
-
-        if scheme == "von_neumann":
-            directions = self.VON_NEUMANN_DIRECTIONS
-        else:
-            directions = self.MOORE_DIRECTIONS
 
         for i in range(self.l.size):
             # Get neighbours
             neighbours = self.neighbours[i]
 
-            u, v = 0, 0 # components of velocity vector
-
             if self.d[i] > self.depth_tolerance:
-                for j, direction_idx in neighbours:
+                for j, ni in enumerate(neighbours):
 
                     # Average depth
-                    d_avg = 0.5 * (self.d[i] + self.d[j])
+                    d_avg = 0.5 * (self.d[i] + self.d[ni])
 
                     # Length of the neighbour cell edge
-                    if scheme == "moore":
+                    if self.scheme == "moore":
                         de = self.dx * np.sqrt(2) # diagonal cell (Moore's neighbourhood)
                     else:
                         de = self.dx
 
                     # Compute intercellular velocities
-                    v_i = I_ij[i, direction_idx] / (d_avg * de * self.dt)
+                    v_j = self.outflux1[i, j] / (d_avg * de * self.dt)
 
-                    # Add velocity contribution to components
-                    # u += v_i * directions[direction_idx][1]
-                    # v += v_i * directions[direction_idx][0]
-                    vel[i] = v_i
-
-            # vel[i, 0] = u
-            # vel[i, 1] = v
+                    vel[i] += v_j
 
         return vel
 
 
-    def compute_hydraulic_gradient(self, i, scheme):
+    def compute_hydraulic_gradient(self, i):
         """
         Compute the hydraulic slope (S) for a given cell based on its neighbors.
 
@@ -291,10 +284,10 @@ class WCA2D:
         neighbors = self.neighbours[i]
 
         l0 = self.l[i]  # Water level in the central cell
-        for j, idx in neighbors:
+        for ni in neighbors:
 
-            l_j = self.l[j]  # Water level in the neighbour
-            if scheme == "moore":
+            l_j = self.l[ni]  # Water level in the neighbour
+            if self.scheme == "moore":
                 dx = self.dx * np.sqrt(2)  # Diagonal cell (Moore's neighbourhood)
             else:
                 dx = self.dx  # Rectangular cell (von Neumann neighbourhood)
@@ -305,7 +298,7 @@ class WCA2D:
         return max_slope
 
 
-    def update_timestep(self, max_dt, scheme, slope_tolerance=0.01):
+    def update_timestep(self, max_dt, slope_tolerance=0.01):
         """
         Update the time step based on grid properties, Manning's formula, and slope.
 
@@ -328,7 +321,7 @@ class WCA2D:
                     continue  # Skip dry cells
 
                 R = d  # Hydraulic radius approximated by water depth
-                S = self.compute_hydraulic_gradient(i, scheme)
+                S = self.compute_hydraulic_gradient(i)
 
                 if S > slope_tolerance:  # Only consider slopes above the tolerance
                     # Compute time step for this cell
@@ -352,39 +345,52 @@ class WCA2D:
             output_interval (float): Time interval to save and output results.
         """
         self.dt = dt
+        self.prev_dt = dt
+        self.ratio_dt = dt / self.prev_dt
         time = 0
         update_time = output_interval
 
+        self.scheme = scheme
         self.neighbours = self.get_neighbours(scheme=scheme)
+        max_neighbours = 8 if scheme == "moore" else 4
+        self.outflux1 = np.zeros((self.l.size, max_neighbours))
+        self.outflux2 = np.zeros((self.l.size, max_neighbours))
 
         self.log.time = [time]
         self.log.update_time = [time]
-        self.log.d = [self.d]
-        self.log.l = [self.l]
+        self.log.d = [self.d.copy()]
+        self.log.l = [self.l.copy()]
         self.log.dt = [self.dt]
         self.log.vel = [np.zeros(self.grid_shape[0] * self.grid_shape[1])]
 
         while time < total_time:
-            new_d, new_I_total, I_ij = self.compute_intercellular_volume(scheme=scheme)
+            self.outflux2 = np.copy(self.outflux1)
+            self.outflux1 = np.zeros((self.l.size, max_neighbours))
 
-            # new_d = self.apply_boundary_conditions(new_d)
+            # compute outflow for current timestep. Assigns fluxes to self.outflux1.
+            for i in range(self.l.size):
+                self.compute_outflow(i, self.ratio_dt)
 
-            self.d = new_d
+            # compute water depth from outflux1. Assigns to self.d
+            for i in range(self.l.size):
+                self.compute_water_depth(i)
+
+            # self.d = new_d
             self.l = self.z + self.d
-            self.I_total = new_I_total
 
-            self.log.d.append(self.d)
+            self.log.d.append(self.d.copy())
             self.log.dt.append(self.dt)
-            self.log.l.append(self.l)
+            self.log.l.append(self.l.copy())
 
             time += self.dt
             self.log.time = time
 
             if time >= update_time:
 
-                vel = self.compute_intercellular_velocity(I_ij, scheme)
+                vel = self.compute_intercellular_velocity()
                 self.log.vel.append(vel)
-                self.dt = self.update_timestep(max_dt, scheme=scheme)
+                self.prev_dt = self.dt
+                self.dt = self.update_timestep(max_dt)
                 # print(self.dt)
                 
                 update_time += output_interval

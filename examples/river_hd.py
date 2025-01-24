@@ -90,13 +90,13 @@ print(len(dt))
 
 window_size = 5
 speed_avg = log.mv_avg(log.speed(),window_size)
-d_avg = log.mv_avg(log.d, window_size)
+d_avg = log.mv_avg(log.to_2D(log.d,grid_shape[0], grid_shape[1]), window_size)
 l_avg = log.mv_avg(log.l, window_size)
-u_avg = log.mv_avg(log.u(), window_size)
-v_avg = log.mv_avg(log.v(-1), window_size)
+# u_avg = log.mv_avg(log.u(), window_size)
+# v_avg = log.mv_avg(log.v(-1), window_size)
 
 plot_iteration_dependent_variable([dt],ylabels=["dt"])
 visualize_cell_parameter(d_avg, zlabel='water depth', interval=1)
-visualize_cell_parameter_with_vector(speed_avg, u_avg, v_avg,
-    zlabel="speed", interval=100, scale=0.03
-)
+# visualize_cell_parameter_with_vector(speed_avg, u_avg, v_avg,
+#     zlabel="speed", interval=100, scale=0.03
+# )

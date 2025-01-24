@@ -42,6 +42,8 @@ wca.run_simulation(
 log = wca.log
 ds = log.to_2D(log.d, grid_shape[0], grid_shape[1])
 speed = log.speed()
+dt = log.dt
 
+plot_iteration_dependent_variable([dt],ylabels=["dt"])
 visualize_cell_parameter(ds, zlabel='water depth', interval=100)
 visualize_cell_parameter(speed, zlabel='speed', interval=100)
